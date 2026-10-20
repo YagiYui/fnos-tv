@@ -83,6 +83,11 @@ http {
         }
         
         location /fnos/v/api/v1/play/record {
+            # DELETE bypasses the POST-only Flask playback progress recorder.
+            # Re-select /v/ so the original method, body and auth reach FNOS.
+            if ($request_method = DELETE) {
+                rewrite ^/fnos(/.*)$ $1 last;
+            }
             proxy_pass         http://127.0.0.1:8000;
             proxy_set_header   Host $host;
             proxy_set_header   X-Real-IP $remote_addr;
