@@ -1,2 +1,14 @@
 ﻿/dist/
 /.idea
+# Local runtime files and secrets
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+/data/
+/dist/
+node_modules/
+*.log
