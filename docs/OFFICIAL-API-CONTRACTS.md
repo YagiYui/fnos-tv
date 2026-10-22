@@ -17,7 +17,10 @@
 - 已确认 `POST /v/api/v1/item/list`，现有分页参数 `page`、`page_size`、`ancestor_guid`、`exclude_grouped_video`、`sort_type`、`sort_column`、`tags`。
 - 官方库首页使用有限条目数；本项目改为每库 21 条、最多 3 个并发请求、60 秒账户内存缓存，入口仍可进入完整分页列表。
 - 官方筛选代码出现 `type`、`genres`、`resolution`、`color_range`、`audio_type`、`locate`、`decade`、`recognition_status`、`watched`。尚未确认这些值在当前账户下的完整请求结构，不将它们猜测为年份区间或评分区间。
-- 媒体全库搜索参数尚未得到明确调用证据。需要一条脱敏的官方搜索请求或可验证的接口契约；不将首页对已加载条目的过滤当作服务端全库搜索。
+- 2026-10-23 用户提供官方网页搜索请求，确认 `GET /v/api/v1/search/list?q=关键词`，关键词通过 URL 查询参数传递，请求无 JSON 请求体。本项目接入时复用现有 `/fnos` 代理及账户鉴权，不硬编码用户提供的域名、端口或会话数据。请求样本中的会话凭据不保留、不复用。
+- 同日补充响应样本：外层为 `{msg: "", code: 0, data: [...]}`，`data` 是结果数组；已观察到 `guid`、`title`、`type: "Movie"`、`poster`、`watched`、`vote_average`、`release_date`、`ancestor_guid`／`ancestor_name` 等字段。共用请求层校验业务状态并返回 `data`，搜索不再次按片名过滤，保留服务端匹配语义。测试仅使用虚构媒体记录，不存储用户原始媒体信息。
+- 首版根据 `type` 将结果分为电影、剧集与其他；电影／剧集沿用现有详情路由，未支持的类型只展示并提示，避免猜测父级映射。当前真实响应样本只有电影；剧集结果及不同账户权限仍需实际验收。
+- 请求样本只有 `q`，响应没有 `total`、页码或游标，不能据此猜测服务端分页、演员／别名搜索或筛选参数。首版仅对已返回结果分批渲染，每组首批 21 条，“显示更多”不会发送伪造分页参数。HTTP 状态码未单独提供；真实搜索及服务端是否限制返回条数仍需验收。
 - 证据资源：`/v/assets/14a77ac952fc83b785b65592c335e16d-BGXwY7Sz.js` 与 `/v/assets/dba38fcc7e14373d7386c091144609ff-xCPc841t.js`。
 
 ## 收藏与观看状态
