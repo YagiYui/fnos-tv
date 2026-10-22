@@ -16,6 +16,7 @@
 
 - 已确认 `POST /v/api/v1/item/list`，现有分页参数 `page`、`page_size`、`ancestor_guid`、`exclude_grouped_video`、`sort_type`、`sort_column`、`tags`。
 - 官方库首页使用有限条目数；本项目改为每库 21 条、最多 3 个并发请求、60 秒账户内存缓存，入口仍可进入完整分页列表。
+- 2026-10-23 目录浏览批次沿用上述列表字段，实现首页栏目可见时加载和片库返回同页验证；没有增加未核实筛选参数。列表响应的 `total` 仍按可选字段处理，不存在时保留既有的下一页边界推断。
 - 官方筛选代码出现 `type`、`genres`、`resolution`、`color_range`、`audio_type`、`locate`、`decade`、`recognition_status`、`watched`。尚未确认这些值在当前账户下的完整请求结构，不将它们猜测为年份区间或评分区间。
 - 2026-10-23 用户提供官方网页搜索请求，确认 `GET /v/api/v1/search/list?q=关键词`，关键词通过 URL 查询参数传递，请求无 JSON 请求体。本项目接入时复用现有 `/fnos` 代理及账户鉴权，不硬编码用户提供的域名、端口或会话数据。请求样本中的会话凭据不保留、不复用。
 - 同日补充响应样本：外层为 `{msg: "", code: 0, data: [...]}`，`data` 是结果数组；已观察到 `guid`、`title`、`type: "Movie"`、`poster`、`watched`、`vote_average`、`release_date`、`ancestor_guid`／`ancestor_name` 等字段。共用请求层校验业务状态并返回 `data`，搜索不再次按片名过滤，保留服务端匹配语义。测试仅使用虚构媒体记录，不存储用户原始媒体信息。
