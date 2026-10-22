@@ -1,0 +1,17 @@
+# Dedicated deployment example. Merge only this service into the existing NAS layout.
+services:
+  fnos-tv:
+    image: ${FNOS_TV_IMAGE:?Set an immutable tested image tag}
+    environment:
+      FNOS_URL: ${FNOS_URL:?Set the actual official FNOS endpoint}
+      TZ: Asia/Shanghai
+    ports:
+      - '18005:80'
+    volumes:
+      - ${FNOS_TV_DATA:?Set the persistent data directory}:/app/data
+      # Mount actual media roots read-only at their same absolute paths.
+      # Configure these paths in data/media-roots.json for ASS/PGS extraction.
+    tmpfs:
+      - /run/fnos-tv-private:rw,noexec,nosuid,size=64m,mode=0700
+    command: ['supervisord', '-c', '/etc/supervisor/conf.d/supervisord.conf']
+    restart: unless-stopped

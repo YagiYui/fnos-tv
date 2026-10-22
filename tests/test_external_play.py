@@ -8,6 +8,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from flask import Flask, Blueprint
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 spec = importlib.util.spec_from_file_location('external_test_module', sys.argv[1])
 module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 prefix = '/v/media/' + 'a' * 32 + '/'

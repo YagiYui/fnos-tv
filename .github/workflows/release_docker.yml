@@ -1,0 +1,93 @@
+name: Validate paired release
+on:
+  pull_request:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      frontend_sha:
+        description: 'Full 40-character commit SHA from YagiYui/fnos-tv-web'
+        required: true
+        type: string
+      publish:
+        description: 'Publish tested image to Docker Hub'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: backend
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+        working-directory: backend
+      - run: |
+          python tests/test_backend.py
+          python tests/test_ass_support.py
+          python tests/test_manual_danmaku.py
+          python tests/test_routes.py
+          python tests/test_migrations.py
+          python tests/test_release.py
+          mkdir -p data
+          python tests/test_external_play.py apps/danmu/external_play.py
+        working-directory: backend
+  paired-image:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require immutable frontend revision
+        env:
+          FRONTEND_SHA: ${{ inputs.frontend_sha }}
+        run: '[[ "$FRONTEND_SHA" =~ ^[a-f0-9]{40}$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          path: backend
+      - uses: actions/checkout@v4
+        with:
+          repository: YagiYui/fnos-tv-web
+          ref: ${{ inputs.frontend_sha }}
+          path: frontend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+          package_json_file: frontend/package.json
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: node --test *.test.mjs
+        working-directory: frontend
+      - run: pnpm build
+        working-directory: frontend
+      - run: cp -a frontend/dist backend/dist
+      - name: Record release pair
+        run: python backend/scripts/release_manifest.py --backend backend --frontend frontend --dist backend/dist
+      - run: docker build --build-arg FNOS_URL=http://127.0.0.1:5666 -t fnos-tv-test ./backend
+      - name: Isolated runtime integration
+        run: bash backend/scripts/test_image.sh fnos-tv-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paired-release-${{ github.sha }}
+          path: |
+            backend/dist/
+            backend/release-manifest.json
+      - uses: docker/login-action@v3
+        if: inputs.publish
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Publish immutable image
+        if: inputs.publish
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        run: |
+          docker tag fnos-tv-test "$DOCKER_USERNAME/fntv:${GITHUB_SHA}"
+          docker push "$DOCKER_USERNAME/fntv:${GITHUB_SHA}"

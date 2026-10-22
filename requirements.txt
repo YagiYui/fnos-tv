@@ -1,4 +1,4 @@
-brotlicffi
+brotlicffi==1.2.0.0
 cn2an==0.5.23
 curl_cffi==0.7.4
 Flask==3.1.1
@@ -13,7 +13,7 @@ retrying==1.3.4
 SQLAlchemy==2.0.38
 tqdm==4.66.5
 websocket_client==1.8.0
-Flask-Caching
-tldextract
-gunicorn
-alembic
+Flask-Caching==2.3.1
+tldextract==5.3.1
+gunicorn==25.0.1
+alembic==1.18.3
