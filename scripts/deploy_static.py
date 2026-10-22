@@ -35,7 +35,14 @@ def verify(source, manifest):
 
 
 def atomic_copy(source, destination):
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    missing = []
+    parent = destination.parent
+    while not parent.exists():
+        missing.append(parent)
+        parent = parent.parent
+    for directory in reversed(missing):
+        directory.mkdir(exist_ok=True)
+        os.chmod(directory, 0o755)
     descriptor, name = tempfile.mkstemp(prefix='.fnos-publish-', dir=destination.parent)
     try:
         with os.fdopen(descriptor, 'wb') as output, source.open('rb') as incoming:
@@ -62,7 +69,9 @@ def publish(source, target, backup, manifest):
         shutil.copytree(target, backup)
     else:
         backup.mkdir(parents=True)
-    target.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        target.mkdir(parents=True)
+        os.chmod(target, 0o755)
     for name in manifest['assets']:
         if name != 'index.html':
             atomic_copy(source / name, target / name)
