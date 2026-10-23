@@ -33,6 +33,8 @@
 - 官方代码先移除空字符串和题材 `-1` 哨兵，再将实际条件作为 `tags` 发送 `item/list`；标签与题材元数据请求也使用现有账户鉴权。
 - 证据：`dba38fcc7e14373d7386c091144609ff-xCPc841t.js` SHA-256 `f602b27aa69bccfba6e5a5d8328aa38705825101aae01efe001ddb6a88d1a44e`，`eaeb149da82319fb52f529cbb079ed20-F_TyutlP.js` SHA-256 `6ba98bf065cddc94d46f71d88323f6b3abe2e753fdf7a403c5c29104b525868a`。这是官方客户端请求结构证据；尚未在已登录会话下实测标签返回与筛选结果，不能写成端到端验收。
 
+同日用户确认扩展现有排序面板后，前端 `f0e62cf` 已使用上述契约静态发布。标签列表与中文题材表的未签名代理、官方直连响应一致（`5000 / invalid sign`）；真实账户下的选项与筛选结果仍待验收，未扩展成评分区间或搜索服务端分页支持。
+
 ## 收藏与观看状态
 
 - 公开 API 注册表列出 `PUT /v/api/v1/item/favorite`、`DELETE /v/api/v1/item/favorite`、`POST /v/api/v1/favorite/list`。
