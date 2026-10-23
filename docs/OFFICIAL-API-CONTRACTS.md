@@ -24,6 +24,15 @@
 - 请求样本只有 `q`，响应没有 `total`、页码或游标，不能据此猜测服务端分页、演员／别名搜索或筛选参数。首版仅对已返回结果分批渲染，每组首批 21 条，“显示更多”不会发送伪造分页参数。HTTP 状态码未单独提供；真实搜索及服务端是否限制返回条数仍需验收。
 - 证据资源：`/v/assets/14a77ac952fc83b785b65592c335e16d-BGXwY7Sz.js` 与 `/v/assets/dba38fcc7e14373d7386c091144609ff-xCPc841t.js`。
 
+2026-10-23 再次从当前实际 FNOS_URL 读取官方公开代码，补齐列表筛选契约：
+
+- `GET /v/api/v1/tag/list` 的查询参数为 `ancestor_guid`、`is_favorite=0`，固定电影／剧集类型时还传 `type=Movie`／`TV`。返回数据对象中的 `genres`、`decades` 分别给出当前范围的题材 ID 和年代代码。
+- `GET /v/api/v1/tag/genres?lan=zh-CN` 返回题材数组，官方以每项 `id` 为键、`value` 为名称；题材 ID 必须与当前片库标签结果相交。
+- 列表查询 `tags` 的 `type` 为数组；`genres` 是单个数值 ID；`decade` 是单个代码；`watched` 为字符串 `"0"`／`"1"`。未选择字段省略，不把“未看”的 `"0"` 当作空值，也不把所有字段改为数组。
+- 年代代码的官方名称表包含 `Recent`、`2020s`、`2010s`、`2000s`、`1990s`、`1980s`、`1970s`、`Others`；只展示当前片库返回的已知代码，不推断 Recent 的年份边界。当前代码未证明评分区间或任意起止年份字段，不提交此类参数。
+- 官方代码先移除空字符串和题材 `-1` 哨兵，再将实际条件作为 `tags` 发送 `item/list`；标签与题材元数据请求也使用现有账户鉴权。
+- 证据：`dba38fcc7e14373d7386c091144609ff-xCPc841t.js` SHA-256 `f602b27aa69bccfba6e5a5d8328aa38705825101aae01efe001ddb6a88d1a44e`，`eaeb149da82319fb52f529cbb079ed20-F_TyutlP.js` SHA-256 `6ba98bf065cddc94d46f71d88323f6b3abe2e753fdf7a403c5c29104b525868a`。这是官方客户端请求结构证据；尚未在已登录会话下实测标签返回与筛选结果，不能写成端到端验收。
+
 ## 收藏与观看状态
 
 - 公开 API 注册表列出 `PUT /v/api/v1/item/favorite`、`DELETE /v/api/v1/item/favorite`、`POST /v/api/v1/favorite/list`。

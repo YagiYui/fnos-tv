@@ -20,7 +20,7 @@ def manifest(backend, frontend, dist):
         'python': platform.python_version(),
         'node': subprocess.check_output(['node', '--version'], text=True).strip(),
         'pnpm': json.loads((frontend / 'package.json').read_text(encoding='utf-8')).get('packageManager'),
-        'migration_head': 'create_initial_tables',
+        'migration_head': 'add_lookup_indexes',
         'assets': {str(file.relative_to(dist)).replace('\\', '/'): hashlib.sha256(file.read_bytes()).hexdigest()
                    for file in sorted(dist.rglob('*')) if file.is_file()},
     }
