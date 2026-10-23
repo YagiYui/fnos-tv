@@ -22,6 +22,12 @@ ArtPlayer 原有自动重载旧地址已禁用，HLS 内部有限网络重试继
 
 ## 发布与回退
 
-使用现有静态发布流程：核对当前镜像、挂载、旧资源与配套源码，独立时间戳备份，先散列资源、最后原子切换 index.html，保留旧资源。无需修改数据库、Compose 或重建后端。发布版本、备份目录和独立目标回退演练结果待补充。
+前端业务版本 `8c9d68284be3279e1c237227da2fabdb9e73325c`，配对后端文档版本 `4d59a9d687f52dea7af34f9d1f39554e381c69bb`；已于 01:49 静态发布。发布前核对实际镜像、web/ 和模板挂载、旧入口及 5 个已有相关源码，随后备份并同步 9 个源码／回归／维护文件，先散列资源、最后原子切换 index.html，保留旧资源。
+
+备份：`/vol7/1000/docker/.backups/fnos-tv-playback-recovery-20261024-014931`。其中 web-before/ 对应相邻集导航版 `6cd905c`，frontend-before/ 保留配套源码，release-manifest.json 标识本次新版本，previous-web-manifest.json 标识旧资源。browser-verification.json 与 public-verification.json 分别记录隔离浏览器结果和公网资源校验。
+
+71 个 NAS HTTP 发布文件与清单一致；公网首页、入口 JS／CSS、播放器 JS／CSS 和相邻集辅助模块共 6 个文件散列一致。健康、服务版本和 Nginx 校验通过；无签名搜索代理与官方直连同为 invalid sign，只证明现有代理一致性。所有容器身份和启动时间不变，后端仍为 `fnos-tv-local:indexes-c96657f-6945ff1`，本批未修改数据库、Compose、Nginx 或后端镜像。
+
+备份目录的独立 rehearsal/web/ 已执行“播放恢复版 → 相邻集导航版 → 播放恢复版”，各步散列通过，线上未切换旧版本。正式账户、多音轨／字幕与实际手机／平板体验尚未验收，不为验证主动中断正式播放。两仓仅本地提交，未推送。
 
 回退按 [静态发布与回退流程](../deploy/README.md) 将本批备份的 web-before/ 和 previous-web-manifest.json 发布回 web/，先另备份当时线上版本，再按 release-manifest.json 的 source_files 逐项恢复 frontend-before/。本批新建的恢复模块、卡片和测试在旧源码中不存在时只移除这些明确的新文件，不整仓覆盖。保留旧散列资源，不还原数据库或真实播放进度。
