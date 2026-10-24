@@ -14,3 +14,6 @@
 39 项前端回归通过，1 项真实 PGS 素材检查因缺素材跳过；构建通过。独立 Edge 合成两文件／两组轨道验证默认从头、明确续播、暂停、实际媒体请求归属、本地字幕、延后方向、诊断白名单、切账号清理、窄屏布局，页面错误为零，截图已检查。ASS／PGS 偏移已覆盖渲染器接口测试，真实素材仍待 P08–P10 晚间验收。
 
 正式部署与回退完成后追加，未推送远端。
+
+## 正式结果
+前端 c49581f、配对后端 8fb36cb 已发布；71 个 NAS HTTP 与 8 个公网关键文件散列一致，服务健康、Nginx 配置有效、所有容器身份／启动时间不变，无进程重启。备份 /vol7/1000/docker/.backups/fnos-tv-playback-tools-20261024-112940 保留 web-before、frontend-before、发布清单、浏览器证据及截图。独立目标静态回退至 b06c5f8 再恢复及 14 个配套源码回退／恢复通过，没有切换正式网页做演练。回退先沿 scripts/deploy_static.py 发布 web-before，恢复 frontend-before 中对应文件；原先不存在的四个文件为 playback-tools.test.mjs、media-files.js、subtitle-adjustments.js、playback-diagnostics.js（后三者位于 src/views/Play/），仅回退时删除这些明确的新叶文件。数据库、偏好和配置无需恢复。两仓仅本地提交，未推送。
