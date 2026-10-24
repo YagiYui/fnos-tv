@@ -24,4 +24,16 @@ Windows 外部播放优先使用这个原文件地址，不新建转码会话，
 
 后端业务版本 `9657534` 已部署，备份 `/vol7/1000/docker/.backups/fnos-tv-file-proxy-20261024-083146`。单文件挂载写入保留 inode；普通 Gunicorn 使用 preload，单纯 HUP 不能刷新父进程已导入模块，故只对普通 API master 做 supervisor 管理下的重启、对独立流 worker 做 HUP。新接口对无效账户返回 401、未发放票据；健康及所有容器身份／启动时间保持。生产已确认真实账户发放原文件票据成功，公网无浏览器 Cookie 的 Range 请求返回 206 和正确字节，HEAD 为 200。长于原失效窗口的解码验证及前端发布结果另行补充。
 
+最终前端业务版本 `6a04bd9c0b484a3939bcc2ec0fbc0d705d22ddb9`，配对后端清单版本 `9205ae9`，静态发布完成。首批前端 `eb1d4ba` 于 08:33 发布，随后补齐明确清空账户时不回退旧 userKey 的保护，于 08:35 发布最终版本。最终 71 个 NAS HTTP 文件和 8 个公网关键文件散列通过，Nginx 校验和健康正常；所有容器 ID 与启动时间不变。普通 API master 重启和流 worker 热更新已单独记录，不能写成后端进程未更新；没有重建容器、修改 Nginx／Compose 或恢复数据库。
+
+原文件临时地址经公网无浏览器 Cookie 读取 65536 字节成功，持续到 90 秒时 Range 仍为 206、HEAD 为 200。独立 FFmpeg 连续解码 85 秒、2038 帧，退出码 0、解码错误 0，已超过此前约 68 秒停止的观察窗口；验证未写入播放进度。这证明当前链路的数据读取和解码，不能代替 PotPlayer 实际画面、声音及长时播放验收。非 Windows 的旧 HLS 模式未改变官方会话寿命，长时外部播放另行处理。
+
+最终静态备份 `/vol7/1000/docker/.backups/fnos-tv-feedback-final-20261024-083506` 保存前一静态版 `eb1d4ba`、配套源码、发布清单、浏览器／公网及原文件验证结果；本批前原始静态备份为 `/vol7/1000/docker/.backups/fnos-tv-feedback-20261024-083316`，对应 `8c9d682`。独立目标已演练“最终修复版 → 本批前 F2.1 版 → 最终修复版”，文件散列通过，正式入口未参与版本回退。两仓只本地提交，未推送。
+
+## 回退
+
+只回退最后的账户清空保护，可按 [静态回退流程](../deploy/README.md) 使用 final 备份的 web-before/ 与 previous-web-manifest.json，恢复至 `eb1d4ba`。撤回本批全部前端修复则使用首批静态备份 `...-083316/web-before/` 与其 previous-web-manifest.json；按本批 release-manifest.json 的 11 个 source_files 从该备份 frontend-before/ 逐项恢复，本批新 external-session.js 和对应测试在旧源码不存在时仅移除这两个文件。不要整仓覆盖。final 备份的 original-web-manifest.json 及 rollback-rehearsal.json 记录整批前版本校验和演练结果。
+
+如需回退后端，先恢复旧前端，另备份当前补丁，再将后端备份 `...file-proxy-20261024-083146/external_play.py` 的字节写回原挂载文件，保留 inode；对独立流 master 发 HUP，对普通 API master 发 TERM，由已核对的 supervisor autorestart 重新启动。等待本地 Flask 的无鉴权 external-play POST 返回 401／code -2，再验证健康；不能只探测官方版本代理作为 Flask 就绪判断。已发放的原文件票据在旧后端不兼容，需从恢复后的页面重新获取链接。整个回退不恢复数据库或覆盖新播放进度。
+
 PotPlayer 实际画面／声音和用户原设备的登录、离线表现仍需复验，不把接口或 FFmpeg 解码当作 PotPlayer 交互已验收。

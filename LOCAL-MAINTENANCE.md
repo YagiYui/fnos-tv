@@ -104,3 +104,5 @@ F1.2 已从当前官方公开代码补齐标签与筛选字段契约，见 `docs
 用户反馈仍有缓冲却显示失败、PotPlayer 实际链接失败和首次登录缺少继续观看。前端修复缓冲错误决策和账户就绪后读取；原临时 HLS 地址所依赖的官方会话实际会先于四小时票据失效，不能仅用票据寿命承诺可播放时间。Windows 改为受限原文件票据，通过已核实的官方 `/v/api/v1/media/range/<media_guid>` 代理读取，支持 Range 与 HEAD；沿用 m3u／HTTP 地址，不修改本机协议。其他平台保留独立 HLS 会话。
 
 34 项前端回归、构建、独立浏览器和一次性后端 fixture 通过，发布状态与详细回退另见 [反馈修复记录](docs/RELEASE-2026-10-24-PLAYBACK-FEEDBACK.md)。后端补丁是单文件挂载需保留 inode；普通 API 使用 Gunicorn preload，更新时须重新启动该 master，单纯 HUP 不足以更新父进程已导入的代码。真实客户端验收仍单列。
+
+后端原文件补丁 `9657534` 与最终前端 `6a04bd9` 已发布；71 个 NAS HTTP 资源、8 个公网文件、独立目标整批回退演练通过。真实原文件票据在公网 Range 成功，90 秒仍可分段读取，FFmpeg 连续解码 85 秒／2038 帧无解码错误；未写播放进度，PotPlayer 真正画面声音仍待用户复验。后端备份 `fnos-tv-file-proxy-20261024-083146`，整批前静态备份 `fnos-tv-feedback-20261024-083316`，最终静态备份 `fnos-tv-feedback-final-20261024-083506`，均在既有 `.backups/` 下。普通 API master 与流 worker 已更新，全部容器身份和启动时间不变。部署就绪检查须命中本地 Flask，不能用 `/fnos/...sys/version` 官方代理判断 Flask 已启动。
