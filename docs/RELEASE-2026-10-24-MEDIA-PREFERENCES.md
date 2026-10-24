@@ -26,4 +26,10 @@
 
 ## 发布与回退
 
-已只读核对正式容器、健康与关键挂载；本批仅前端静态和源码，后端、数据库、Compose、Nginx 和进程不改。实际版本、备份、HTTP 校验与独立回退结果在发布后追加。两仓仅本地提交，未推送。
+前端业务 `b06c5f8f5d16b53a15d67a2dda90963073896db8` 已静态发布，配对清单后端 `ad64fdb761f7d415b96ec72c47b6dd2866c51a3d`；后端业务仍为原文件补丁 `9657534`，镜像 `fnos-tv-local:indexes-c96657f-6945ff1`。备份 `/vol7/1000/docker/.backups/fnos-tv-media-preferences-20261024-111021` 保存旧网页／源码、配置快照、清单与三份浏览器结果／截图，本批仅同步十三个相关源码文件，先资源后原子首页，旧散列资源保留。
+
+71 个 NAS HTTP 文件与 8 个公网关键文件散列一致，Nginx 校验通过，健康正常，所有容器身份和启动时间不变；后端、数据库、Compose、Nginx 与进程无本批修改。无签名搜索代理与直连一致，仅作为路由检查，不当作真实账号搜索验收。
+
+在备份独立目录演练“新版本→上批 0730f82→新版本”及十三个源码逐项恢复／移除／再恢复通过，正式入口未实际回切。回退先另备份当时状态，按 [静态工具流程](../deploy/README.md) 用本备份 web-before 发布到既有 web，以 previous-web-manifest.json 校验；按 release-manifest.json 的 source_files 从 frontend-before 逐项恢复。旧版不存在的 `src/views/Play/media-preferences.js` 与 `media-preferences.test.mjs` 仅从 NAS 挂载源码目录移除这两项，不覆盖其他源码，不恢复数据库或重启服务。浏览器已保存的偏好不随代码回退恢复或清除，旧版会忽略新增字段。
+
+两仓仅本地提交，未推送。真实素材／应用与跨设备同步仍保持未完成边界。
