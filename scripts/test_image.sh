@@ -12,6 +12,9 @@ docker run --rm --network none --entrypoint /bin/bash \
     python tests/test_backend.py
     python tests/test_ass_support.py
     python tests/test_manual_danmaku.py
+    python tests/test_sources.py
+    python tests/test_personal.py
+    python tests/test_record_retention.py
     python tests/test_routes.py
     python tests/test_migrations.py
     python tests/test_release.py

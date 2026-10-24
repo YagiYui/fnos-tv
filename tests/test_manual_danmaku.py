@@ -42,10 +42,18 @@ class Session:
 class DB:
  def __init__(self,model):self.session=Session()
  def close(self):actions.append(('close',None))
-ns.update(CRUDBase=DB,videoConfigUrl=Model)
+ns.update(CRUDBase=DB,videoConfigUrl=Model,authenticated_user=lambda token:{'admin':True},verify_media_scope=lambda *args:None)
 request.headers={'Authorization':'fixture-token'}
 request.get_json=lambda **k:{'guid':'episode-1','parent_guid':'season-1','url':'https://video.example/ep1'}
 assert ns['select_manual_danmu']()['code']==0
 assert saved[0].guid=='episode-1' and saved[0].parent_guid=='season-1'
 assert actions==[('filter',{'guid':'episode-1'}),('delete',None),('commit',None),('close',None)]
 print('PASS: URL host/scheme/port validation, per-platform search results, manual URLs, episode parsing, login check, scoped transactional selection and DB cleanup')
+
+ns['authenticated_user']=lambda token:{'admin':False}
+assert ns['select_manual_danmu']()[1]==403
+assert len(saved)==1
+ns['authenticated_user']=lambda token:{'admin':True}
+ns['verify_media_scope']=lambda *args:(_ for _ in ()).throw(PermissionError())
+assert ns['select_manual_danmu']()[1]==403
+assert len(saved)==1

@@ -69,9 +69,17 @@ class RoutesTest(unittest.TestCase):
         self.record = {'guid': 'season-a', 'item_guid': 'episode-a', 'ts': 20,
                        'create_time': 100, 'playback_speed': 1.25}
         self.url = '/api/videoConfig?guid=season-a&episode_guid=episode-a'
-        self.auth = patch.object(requests, 'get', return_value=response())
+        self.auth = patch.object(requests, 'get', side_effect=self.official_get)
         self.auth.start()
         self.addCleanup(self.auth.stop)
+
+    def official_get(self, url, **kwargs):
+        if url.endswith('/user/info'): return response({'code':0,'data':{'guid':'account-admin','is_admin':True}})
+        if '/item/' in url:
+            guid = url.rsplit('/',1)[-1]
+            return response({'code':0,'data':{'guid':guid,'parent_guid':'season-a' if guid == 'episode-a' else ''}})
+        if '/stream/list/' in url: return response({'code':0,'data':{'files':[{'guid':'file-a','path':'/mount/fixture.mkv'}]}})
+        raise AssertionError('Unexpected fixture route')
 
     def tearDown(self):
         sessions.remove()
@@ -86,12 +94,12 @@ class RoutesTest(unittest.TestCase):
 
     def test_success_and_rejected_record(self):
         with patch.object(requests, 'post', return_value=response()):
-            result = self.client.post('/fnos/v/api/v1/play/record', json=self.record)
+            result = self.client.post('/fnos/v/api/v1/play/record', json=self.record, headers=self.headers)
         self.assertEqual(result.json['code'], 0)
         self.assertEqual(sessions().query(RecordDb).count(), 1)
         for status in (200, 403):
             with patch.object(requests, 'post', return_value=response({'code': -2}, status)):
-                result = self.client.post('/fnos/v/api/v1/play/record', json=self.record)
+                result = self.client.post('/fnos/v/api/v1/play/record', json=self.record, headers=self.headers)
                 self.assertEqual(result.status_code, status)
                 self.assertEqual(result.json['code'], -2)
         self.assertEqual(sessions().query(RecordDb).count(), 1)
@@ -103,13 +111,13 @@ class RoutesTest(unittest.TestCase):
             upstream.assert_not_called()
         for failure, status in ((requests.Timeout(), 504), (ValueError(), 502), (requests.ConnectionError(), 502)):
             with patch.object(requests, 'post', side_effect=failure):
-                self.assertEqual(self.client.post('/fnos/v/api/v1/play/record', json=self.record).status_code, status)
+                self.assertEqual(self.client.post('/fnos/v/api/v1/play/record', json=self.record, headers=self.headers).status_code, status)
         self.assertEqual(sessions().query(RecordDb).count(), 0)
 
     def test_auxiliary_failure_preserves_official_success(self):
         with patch.object(requests, 'post', return_value=response()), \
                 patch.object(record_routes.CRUDBase, 'add', side_effect=RuntimeError('fixture failure')):
-            result = self.client.post('/fnos/v/api/v1/play/record', json=self.record)
+            result = self.client.post('/fnos/v/api/v1/play/record', json=self.record, headers=self.headers)
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json['code'], 0)
         self.assertEqual(sessions().query(RecordDb).count(), 0)
@@ -118,7 +126,7 @@ class RoutesTest(unittest.TestCase):
         self.seed()
         result = self.client.post(self.url, json={'list': [], 'url': []}, headers=self.headers)
         self.assertEqual(result.json['code'], 0)
-        self.assertEqual(self.client.get(self.url, headers=self.headers).json, {'list': [], 'url': []})
+        self.assertEqual(self.client.get(self.url, headers=self.headers).json, {'list': [], 'url': [], 'permissions': {'edit_shared': True}})
         self.assertEqual(sessions().query(videoConfigList).filter_by(guid='season-b').count(), 1)
         self.assertEqual(sessions().query(videoConfigUrl).filter_by(guid='episode-b').count(), 1)
 
@@ -146,6 +154,53 @@ class RoutesTest(unittest.TestCase):
         self.assertEqual(sessions().query(videoConfigList).count(), 2)
         self.assertEqual(sessions().query(videoConfigUrl).count(), 2)
         self.assertEqual(self.client.post(self.url, json={'list': []}, headers=self.headers).json['code'], 0)
+
+    def test_media_scope_and_admin_restrictions(self):
+        self.seed()
+        with patch.object(api_routes, 'verify_media_scope', side_effect=PermissionError()):
+            self.assertEqual(self.client.get(self.url, headers=self.headers).status_code, 403)
+        original = self.official_get
+        def non_admin(url, **kwargs):
+            if url.endswith('/user/info'): return response({'code':0,'data':{'guid':'account-user','is_admin':False}})
+            return original(url, **kwargs)
+        with patch.object(requests, 'get', side_effect=non_admin):
+            self.assertFalse(self.client.get(self.url, headers=self.headers).json['permissions']['edit_shared'])
+            self.assertEqual(self.client.post(self.url, json={'list':[]}, headers=self.headers).status_code,403)
+        wrong = '/api/videoConfig?guid=season-b&episode_guid=episode-a'
+        self.assertEqual(self.client.get(wrong, headers=self.headers).status_code,403)
+        self.assertEqual(sessions().query(videoConfigList).count(),2)
+
+    def test_remote_file_scope_before_nas_access(self):
+        with patch.object(api_routes.FnOs, 'mountmgr_list', create=True) as nas:
+            for suffix, status in [('',400), ('?item_guid=episode-a&media_guid=file-b&path=/mount/fixture.mkv',403), ('?item_guid=episode-a&media_guid=file-a&path=/mount/private.mkv',403)]:
+                self.assertEqual(self.client.get('/api/play'+suffix, headers=self.headers).status_code,status)
+            nas.assert_not_called()
+
+    def test_remote_mount_uses_request_local_session_and_token(self):
+        mount = {'mountPoint':'/mount','path':'/dav/library','proto':'https','address':'fixture.invalid','port':443,'userName':'fixture','password':'fictional'}
+        managers = []
+        for label in ('first','second'):
+            session = Mock()
+            session.__enter__ = Mock(return_value=session); session.__exit__ = Mock(return_value=False)
+            session.post.side_effect = [response({'code':200,'data':{'token':label}}),response({'code':200,'data':{'raw_url':'https://media.invalid/'+label}})]
+            managers.append(session)
+        with patch.object(api_routes,'fnos_username','fixture'), patch.object(api_routes,'fnos_password','fictional'), \
+                patch.object(api_routes.FnOs,'mountmgr_list',create=True,return_value={'rsp':[mount]}), \
+                patch.object(requests,'Session',side_effect=managers):
+            for label in ('first','second'):
+                result = self.client.get('/api/play?item_guid=episode-a&media_guid=file-a&path=/mount/fixture.mkv',headers=self.headers)
+                self.assertEqual(result.json['data'],'https://media.invalid/'+label)
+        for label,session in zip(('first','second'),managers):
+            call = session.post.call_args_list[1]
+            self.assertEqual(call.kwargs['headers']['Authorization'],label)
+            self.assertEqual(call.kwargs['json']['path'],'/library/fixture.mkv')
+            self.assertFalse(call.kwargs['allow_redirects'])
+
+    def test_failed_auxiliary_authorization_preserves_official_result(self):
+        with patch.object(requests, 'post', return_value=response()), patch.object(record_routes, 'verify_media_scope', side_effect=PermissionError()):
+            result = self.client.post('/fnos/v/api/v1/play/record', json=self.record, headers=self.headers)
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(sessions().query(RecordDb).count(),0)
 
     def test_login_failure_and_timeout(self):
         self.assertEqual(self.client.post(self.url, json={'list': []}).status_code, 401)

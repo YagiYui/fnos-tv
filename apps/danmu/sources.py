@@ -241,6 +241,31 @@ class UserState:
 user_state = UserState()
 
 
+def automatic_urls(key, loader):
+    """Only verified accounts cache automatic matches; never overwrite legacy shared rows."""
+    from flask import g, has_request_context
+    if not has_request_context():
+        return loader()
+    account = getattr(g, 'source_account', None)
+    if not account or not getattr(g, 'source_item', None):
+        return loader()
+    scope = hashlib.sha256(json.dumps([registry.read()['revision'], key], ensure_ascii=False).encode()).hexdigest()
+    cached = user_state.get(account['owner'], 'auto-danmaku', scope)
+    now = int(time.time())
+    if isinstance(cached, dict) and 0 <= now - cached.get('time', 0) < 600:
+        return cached['urls']
+    value = loader()
+    # This cache alone is disposable. Personal bindings, preferences and history are never pruned here.
+    try:
+        with user_state.connect() as connection:
+            connection.execute('DELETE FROM user_state WHERE owner=? AND kind=? AND (updated<? OR scope NOT IN (SELECT scope FROM user_state WHERE owner=? AND kind=? ORDER BY updated DESC,scope LIMIT 127))',
+                (account['owner'], 'auto-danmaku', now-600, account['owner'], 'auto-danmaku'))
+        user_state.put(account['owner'], 'auto-danmaku', scope, {'time': now, 'urls': value})
+    except (ValueError, sqlite3.Error):
+        pass  # A cache quota/storage failure must not interrupt playback or manual preferences.
+    return value
+
+
 def selection_for(owner, episode, season):
     for scope in ('episode:' + (episode or ''), 'season:' + (season or ''), 'user'):
         value = user_state.get(owner, 'danmaku', scope)
@@ -277,7 +302,11 @@ def source_url(value):
 
 
 def personalized_urls(urls, episode, season, episode_number, title):
-    from flask import request
+    from flask import request, g
+    verified = getattr(g, 'source_item', None)
+    if verified:
+        episode_number = verified.get('episode_number') or 1
+        title = (verified.get('tv_title') if verified.get('type') != 'Movie' else verified.get('title')) or title
     def base():
         value = urls() if callable(urls) else urls
         return {key: registry.ordered_urls(rows) for key, rows in value.items()}
@@ -462,6 +491,10 @@ def authenticated_user(token):
     if not token:
         raise PermissionError('请重新登录')
     import requests
+    from flask import g, has_request_context
+    cache_key = hashlib.sha256(token.encode()).hexdigest()
+    if has_request_context() and getattr(g, 'source_auth_key', None) == cache_key:
+        return g.source_account
     from Config import fnos_url
     from apps.danmu.ass_support import signed_headers
     with requests.get(fnos_url.rstrip('/') + '/v/api/v1/user/info',
@@ -473,7 +506,10 @@ def authenticated_user(token):
     identity = next((str(user[key]) for key in ('guid', 'uid', 'username') if user.get(key) is not None and str(user[key])), None)
     if not identity:
         raise PermissionError('账户缺少稳定标识，无法保存个人配置')
-    return {'owner': hashlib.sha256(identity.encode()).hexdigest(), 'admin': user.get('is_admin') in (True, 1)}
+    account = {'owner': hashlib.sha256(identity.encode()).hexdigest(), 'admin': user.get('is_admin') in (True, 1)}
+    if has_request_context():
+        g.source_auth_key, g.source_account = cache_key, account
+    return account
 
 
 def register_source_routes(blueprint):
@@ -496,6 +532,20 @@ def register_source_routes(blueprint):
 
     @blueprint.before_request
     def custom_source_login():
+        if request.path in ('/danmu/get', '/danmu/getEmoji') and (request.args.get('guid') or request.args.get('parent_guid')):
+            try:
+                from flask import g
+                from Config import fnos_url
+                from core.media_scope import verify_media_scope
+                user()
+                episode = request.args.get('guid')
+                g.source_item = verify_media_scope(fnos_url, request.headers.get('Authorization', ''), request.args.get('parent_guid') or episode, episode)
+            except PermissionError:
+                return {'code': -2, 'msg': '请登录并确认当前媒体访问权限'}, 403
+            except ValueError:
+                return {'code': -1, 'msg': '媒体范围无效'}, 400
+            except Exception:
+                return {'code': -1, 'msg': '媒体权限服务暂时不可用'}, 502
         if str(request.args.get('source', '')).startswith('custom-') or str(request.args.get('url', '')).startswith('danmaku://'):
             try:
                 user()

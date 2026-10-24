@@ -22,7 +22,8 @@ from core.db.model.videoConfigDb import videoConfigUrl
 from core.videoSearch.Base import VideoSearchBase
 from Config import fnos_url
 from apps.danmu.ass_support import register_ass_routes
-from apps.danmu.sources import registry, register_source_routes, custom_search, custom_episodes, custom_comments, SEARCHES, personalized_urls, record_source_result
+from apps.danmu.sources import registry, register_source_routes, custom_search, custom_episodes, custom_comments, SEARCHES, personalized_urls, record_source_result, authenticated_user, automatic_urls
+from core.media_scope import verify_media_scope
 
 danmu = Blueprint('alist', __name__, url_prefix='/danmu')
 register_ass_routes(danmu)
@@ -154,12 +155,15 @@ def select_manual_danmu():
     try:
         if not check_manual_login(request.headers.get('Authorization', '')):
             return {'code': -2, 'msg': '登录已失效，请重新登录'}, 401
+        if not authenticated_user(request.headers.get('Authorization', ''))['admin']:
+            return {'code': -2, 'msg': '旧版共享接口只允许管理员写入；请使用个人来源偏好'}, 403
         data = request.get_json(silent=True) or {}
         guid = str(data.get('guid', ''))
         parent_guid = str(data.get('parent_guid', ''))
         url = data.get('url', '')
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}', guid) or len(parent_guid) > 100:
             raise ValueError('缺少有效的当前集标识')
+        verify_media_scope(fnos_url, request.headers.get('Authorization', ''), parent_guid or guid, guid)
         if url.startswith('danmaku://'):
             from apps.danmu.sources import parse_reference
             parse_reference(url, 'episode')
@@ -176,6 +180,8 @@ def select_manual_danmu():
         finally:
             db.close()
         return {'code': 0, 'msg': '当前集弹幕来源已保存'}
+    except PermissionError:
+        return {'code': -2, 'msg': '无权修改当前媒体'}, 403
     except ValueError as error:
         return {'code': -1, 'msg': str(error)}, 400
     except Exception as error:
@@ -259,6 +265,13 @@ def fetch_danmu(url, episode_key):
 
 def get_url_dict(douban_id, title=None, season_number=None, episode_number=None, season=None, guid=None,
                  episode_title=None, parent_guid=None):
+    verified = getattr(g, 'source_item', None)
+    if verified:
+        season = verified.get('type') != 'Movie'
+        title = (verified.get('tv_title') if season else verified.get('title')) or title
+        episode_title = verified.get('title') or episode_title
+        season_number = verified.get('season_number') or 1
+        episode_number = verified.get('episode_number') or 1
     if episode_number:
         episode_number = int(episode_number)
     url_dict = {}
@@ -277,20 +290,13 @@ def get_url_dict(douban_id, title=None, season_number=None, episode_number=None,
         db.close()
 
     # 三方数据搜索
-    if len(platform_url_list) == 0:
-        platform_url_list = searchVideoData(title, season_number, season)
-    url_dict = get_episode_url(platform_url_list)
+    def match():
+        addresses = platform_url_list or searchVideoData(title, season_number, season)
+        return get_episode_url(addresses)
+    url_dict = automatic_urls([guid, parent_guid, title, season_number, episode_number, platform_url_list], match)
 
     if str(episode_number) in url_dict or episode_title in url_dict:
         url_list = url_dict.get(str(episode_number), url_dict.get(episode_title, []))
-        if guid is not None:
-            # 如果匹配到直接保存到数据库内
-            db = CRUDBase(videoConfigUrl)
-            try:
-                for item in url_list:
-                    db.add(guid=guid, url=item, parent_guid=parent_guid)
-            finally:
-                db.close()
         url_dict = {
             str(episode_number): url_list
         }

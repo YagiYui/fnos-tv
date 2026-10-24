@@ -5,6 +5,7 @@ from Config import fnos_url
 from core.db.base import CRUDBase
 from core.db.model.recordDb import RecordDb
 from core.validation import playback_record
+from core.media_scope import verify_media_scope
 
 fnos_app = Blueprint('fnos', __name__, url_prefix='/fnos')
 
@@ -38,6 +39,7 @@ def record():
     if 200 <= status < 300 and result.get('code') == 0:
         record_db = None
         try:
+            verify_media_scope(fnos_url,request.headers.get('Authorization',''),local_record['guid'],local_record['episode_guid'])
             record_db = CRUDBase(RecordDb)
             record_db.add(**local_record)
         except Exception:

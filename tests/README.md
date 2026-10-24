@@ -8,6 +8,7 @@ python tests/test_ass_support.py
 python tests/test_manual_danmaku.py
 python tests/test_sources.py
 python tests/test_personal.py
+python tests/test_record_retention.py
 ```
 
 `test_sources.py` 使用临时配置／SQLite 和本地 HTTP fixture，验证来源优先级、禁用、回退、地址策略、协议与账号隔离；Flask 不可用时角色路由项会明确跳过，发布前必须在 `--network none` 一次性镜像容器中补跑通过。它不读取实际账号或生产配置，不在生产容器运行。
@@ -15,6 +16,8 @@ python tests/test_personal.py
 `test_external_play.py apps/danmu/external_play.py` additionally requires Flask and requests; run in a disposable Linux test container. It uses a local HTTP fixture.
 
 `python tests/test_routes.py` requires Flask, requests and SQLAlchemy. It loads the actual route handlers against an in-memory SQLite database and mocks only the official service and optional NAS integration; it never imports the production Flask app or reads account configuration.
+
+`test_record_retention.py` 只对临时 SQLite 验证只读预览、执行前完整备份、过期辅助记录删除和其他表保留。`scripts/record_retention.py` 默认不删除数据，也不安装定时任务；用法与个人／共享数据边界见 `docs/DATA-SCOPE-AND-RETENTION.md`。
 
 `python tests/test_migrations.py` requires SQLAlchemy and Alembic. It upgrades temporary fresh and legacy databases, checking that saved records and configuration survive. Run this before any migration deployment.
 
