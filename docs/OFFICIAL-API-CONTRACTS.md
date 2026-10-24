@@ -16,6 +16,8 @@
 
 ## 媒体列表与筛选
 
+2026-10-24 多文件核查：再次从实际 FNOS_URL 读取 `74c95604043427f0bee1d0e16bfa53af-DZn1lJtt.js`，SHA-256 `92a8becea3c705a448301b49fe7368722a136368137cd541986f3c3ffc3a5527` 未变。官方 gD 函数以 videoStream.mediaGuid 选择 files.guid，过滤 audioStreams／subtitleStreams.mediaGuid。项目使用原始 API 的 media_guid；所选文件用于 play/quality，play/play 中视频／音轨／字幕必须同属该文件。多文件无归属不作猜测，单文件兼容旧响应。
+
 - 已确认 `POST /v/api/v1/item/list`，现有分页参数 `page`、`page_size`、`ancestor_guid`、`exclude_grouped_video`、`sort_type`、`sort_column`、`tags`。
 - 官方库首页使用有限条目数；本项目改为每库 21 条、最多 3 个并发请求、60 秒账户内存缓存，入口仍可进入完整分页列表。
 - 2026-10-23 目录浏览批次沿用上述列表字段，实现首页栏目可见时加载和片库返回同页验证；没有增加未核实筛选参数。列表响应的 `total` 仍按可选字段处理，不存在时保留既有的下一页边界推断。
