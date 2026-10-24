@@ -54,6 +54,19 @@ def verify_file_access(token, item_guid, media_guid):
             files = data.get('files') if isinstance(data, dict) else None
             if not isinstance(files, list) or not any(item.get('guid') == media_guid for item in files if isinstance(item, dict)):
                 raise PermissionError('媒体文件不属于当前影片或没有访问权限')
+            return next(item for item in files if isinstance(item, dict) and item.get('guid') == media_guid)
+
+
+def external_filename(file):
+    # Publish only a bounded basename from the authorized file, never its NAS path.
+    value = file.get('path') or file.get('file_name') or file.get('name') or 'media'
+    if not isinstance(value, str):
+        return 'media'
+    name = value.replace('\\', '/').rsplit('/', 1)[-1]
+    name = re.sub(r'[\x00-\x1f\x7f<>:"|?*]', '_', name).strip(' .')
+    stem, extension = os.path.splitext(name)
+    extension = extension[:12]
+    return ((stem[:160] + extension) if stem else 'media') or 'media'
 
 
 def upstream(path, token, method='GET', headers=None):
@@ -120,15 +133,16 @@ def register_external_routes(blueprint):
                 if data.get('play_link'):
                     raise ValueError('仅支持一种播放来源')
                 path = raw_media_path(data['media_guid'])
-                verify_file_access(token, data.get('item_guid'), data['media_guid'])
+                file = verify_file_access(token, data.get('item_guid'), data['media_guid'])
                 with upstream(path, token, headers={'Range': 'bytes=0-0'}) as response:
                     if 'json' in response.headers.get('Content-Type', ''):
                         raise PermissionError('媒体登录已失效或没有访问权限')
                     content_range = re.fullmatch(r'bytes 0-0/(\d+)', response.headers.get('Content-Range', ''))
                     if response.status_code != 206 or not content_range or int(content_range[1]) < 1 or len(response.raw.read(2)) != 1:
                         raise ValueError('原文件不可用')
-                state = {'mode': 'file', 'path': path}
-                suffix = 'media'
+                filename = external_filename(file)
+                state = {'mode': 'file', 'path': path, 'filename': filename}
+                suffix = quote(filename, safe='')
             else:
                 path = media_path(data.get('play_link', ''))
                 if not urlsplit(path).path.endswith('.m3u8'):
@@ -172,7 +186,7 @@ def register_external_routes(blueprint):
                 return '播放链接已过期，请从网页重新打开', 403
             raw_file = state.get('mode') == 'file'
             if raw_file:
-                if resource != 'media' or request.query_string:
+                if resource != state.get('filename', 'media') or request.query_string:
                     return '播放资源不属于当前影片', 403
                 path = raw_media_path(state['path'].rsplit('/', 1)[-1])
                 if path != state['path']:
@@ -203,6 +217,8 @@ def register_external_routes(blueprint):
                 return Response(text, mimetype='application/vnd.apple.mpegurl', headers={'Cache-Control': 'no-store'})
             outgoing = {key: response.headers[key] for key in ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'ETag', 'Last-Modified'] if key in response.headers}
             outgoing['Cache-Control'] = 'private, no-store'
+            if raw_file:
+                outgoing['Content-Disposition'] = "inline; filename*=UTF-8''" + quote(state.get('filename', 'media'), safe='')
             if request.method == 'HEAD':
                 status = response.status_code
                 if raw_head and 'Range' not in request.headers:

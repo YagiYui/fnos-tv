@@ -17,6 +17,7 @@ token = 'test-private-cookie'
 raw_guid = 'c' * 32
 item_guid = 'd' * 32
 raw_path = '/v/api/v1/media/range/' + raw_guid
+raw_filename = '示例电影 (2026).mkv'
 class Server(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def do_HEAD(self):
@@ -28,7 +29,7 @@ class Server(BaseHTTPRequestHandler):
             # Signed API authorization uses the Authorization header without a browser cookie.
             if self.path.startswith('/v/api/v1/stream/list/') and self.headers.get('Authorization') == token:
                 assert self.headers.get('authx')
-                body=json.dumps({'code':0,'data':{'files':[{'guid':raw_guid}] if self.path.startswith('/v/api/v1/stream/list/'+item_guid+'?') else []}}).encode();kind='application/json';status=200
+                body=json.dumps({'code':0,'data':{'files':[{'guid':raw_guid, 'path':'/private/movies/'+raw_filename}] if self.path.startswith('/v/api/v1/stream/list/'+item_guid+'?') else []}}).encode();kind='application/json';status=200
             else:
                 body=b'{"code":-2,"msg":"Auth Failed"}'; kind='application/json'; status=200
         elif self.path == raw_path:
@@ -78,9 +79,19 @@ with tempfile.TemporaryDirectory() as directory:
     assert client.post('/danmu/external-play',json={'item_guid':'e'*32,'media_guid':raw_guid},headers={'Authorization':token}).status_code==401
     raw=client.post('/danmu/external-play',json={'item_guid':item_guid,'media_guid':raw_guid},headers={'Authorization':token})
     assert raw.status_code==200,raw.data
-    raw_url=raw.json['data']['url'];assert raw_url.endswith('/media') and token not in raw_url
+    raw_url=raw.json['data']['url'];assert raw_url.endswith(module.quote(raw_filename, safe='')) and token not in raw_url and 'private' not in raw_url
     response=client.get(raw_url,headers={'Range':'bytes=0-6'});assert response.status_code==206 and response.data==b'fixture'
     response=client.head(raw_url);assert response.status_code==200 and response.headers['Content-Length']=='19'
+    assert response.headers['Content-Disposition'] == "inline; filename*=UTF-8''" + module.quote(raw_filename, safe='')
+    assert module.external_filename({'path': '/private/unsafe\r\nname?.mkv'}) == 'unsafe__name_.mkv'
+    assert module.external_filename({'path': 'C:\\private\\movie.mp4'}) == 'movie.mp4'
+    assert module.external_filename({'path': '/private/../../..'}) == 'media'
+    assert module.external_filename({'name': 'a'*300+'.mkv'}).endswith('.mkv')
+    raw_state=module.STORE/(raw_url.split('/')[3]+'.json')
+    legacy=json.loads(raw_state.read_text()); legacy.pop('filename'); raw_state.write_text(json.dumps(legacy))
+    legacy_url=raw_url.rsplit('/',1)[0]+'/media'
+    assert client.get(legacy_url,headers={'Range':'bytes=0-6'}).data == b'fixture'
+    assert client.get(raw_url).status_code == 403
     assert client.get(raw_url+'/other').status_code==403
     assert client.get(raw_url+'?path=other').status_code==403
     try:module.rewrite_playlist('#EXTM3U\nhttps://attacker.test/file.ts\n',prefix+'preset.m3u8',prefix,ticket);raise AssertionError('foreign host accepted')
