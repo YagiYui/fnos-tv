@@ -14,8 +14,12 @@
 
 ## 发布与回退
 
-待完成静态发布后追加实际提交、清单、备份目录、资源校验和独立回退演练结果。发布前已重新只读核对容器健康、镜像、端口和挂载，实际 `/app/dist` 对应现有服务 `web/`。后端接口、Compose、Nginx 和数据库无本批修改，保留旧资源，先资源后原子切换首页，继续使用上批原文件代理补丁。
+前端业务提交 `d48e93d14d3e459d23ea9c3e6b11899450847293`，配对清单后端提交 `99aba3adfcd949b2d544de3830110a8ca7779ebf`。已静态发布；后端业务仍为原文件补丁 `9657534`，镜像仍为 `fnos-tv-local:indexes-c96657f-6945ff1`。
 
-前端业务提交 `d48e93d`，配对后端清单提交在生成后记录。
+发布前重新只读核对容器健康、镜像、端口和挂载，实际 `/app/dist` 对应现有服务 `web/`。备份 `/vol7/1000/docker/.backups/fnos-tv-preferences-20261024-090735` 保存 web-before、frontend-before、配对清单及配置快照。只同步本批 7 个源码文件与构建资源，保留旧资源，最后原子切换首页；后端接口、Compose、Nginx、数据库未变，全部容器身份与启动时间不变，没有重启进程。
+
+71 个 NAS HTTP 文件和 8 个公网关键文件散列一致；Nginx 配置检查通过、服务健康。无签名搜索请求经代理与官方直连一致返回 invalid sign，只证明代理一致性，不代表真实搜索权限验收。独立目录演练“新静态版本→上批版本→新版本”和七个源码文件恢复／移除／再恢复，通过后只读核对正式资源，未对正式入口进行版本回退。备份内 rollback-rehearsal.json 记录结果。
+
+回退时先另备份当时现状，使用 [静态发布工具](../deploy/README.md) 将本备份 web-before 作为 source、正式 web 作为 target、previous-web-manifest.json 作为 manifest，先资源后首页恢复至 `6a04bd9`。配套源码按 release-manifest.json 的七个 source_files 逐项从 frontend-before 恢复；旧备份不存在的 `src/views/Play/player-preferences.js`、`player-preferences.test.mjs`、`player-preferences-integration.test.mjs` 只从 NAS 挂载源码目录移除这三项，禁止整仓覆盖。旧全局偏好未删除，旧版继续读取其原值；本批新写的账户键无需清除。无数据库、后端补丁或容器回退。
 
 真实设备项目追加至 [晚间验收清单](ACCEPTANCE-2026-10-24.md)，不要求用户白天操作设备。两仓只本地提交，不推送。
