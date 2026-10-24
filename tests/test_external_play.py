@@ -14,12 +14,21 @@ spec = importlib.util.spec_from_file_location('external_test_module', sys.argv[1
 module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 prefix = '/v/media/' + 'a' * 32 + '/'
 token = 'test-private-cookie'
+raw_guid = 'c' * 32
+raw_path = '/v/api/v1/media/range/' + raw_guid
 class Server(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
-    def do_HEAD(self): self.do_GET()
+    def do_HEAD(self):
+        if self.path == raw_path:
+            self.send_response(501); self.end_headers()
+        else: self.do_GET()
     def do_GET(self):
         if self.headers.get('Authorization') != token or self.headers.get('Cookie') != 'authorization=' + token:
             body=b'{"code":-2,"msg":"Auth Failed"}'; kind='application/json'; status=200
+        elif self.path == raw_path:
+            body=b'fixture-media-bytes';kind='application/octet-stream';status=200
+            if self.headers.get('Range'):
+                status=206;body=body[:1] if self.headers['Range']=='bytes=0-0' else body[:7]
         elif self.path.startswith(prefix + 'preset.m3u8'):
             assert not self.headers.get('Range'), 'Playlist range must be stripped before rewriting'
             body=b'#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,URI="audio.m3u8?x=1&y=2"\nmain.m3u8\n';kind='application/vnd.apple.mpegurl';status=200
@@ -29,7 +38,7 @@ class Server(BaseHTTPRequestHandler):
             body=b'fixture-media-bytes'; kind='video/mp2t'; status=206 if self.headers.get('Range') else 200
             if status==206:body=body[0:7]
         self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)))
-        if status==206:self.send_header('Content-Range','bytes 0-6/19')
+        if status==206:self.send_header('Content-Range',f'bytes 0-{len(body)-1}/19')
         self.end_headers()
         if self.command!='HEAD':self.wfile.write(body)
 server=ThreadingHTTPServer(('127.0.0.1',0),Server)
@@ -56,6 +65,17 @@ with tempfile.TemporaryDirectory() as directory:
     assert client.head(media).status_code==200
     assert client.get('/danmu/external-play/'+'b'*43+'/main.m3u8').status_code==403
     assert client.get('/danmu/external-play/'+ticket+'/%2e%2e/secret.m3u8').status_code==403
+    for bad in ['../secret','https://other','z'*32]:
+        assert client.post('/danmu/external-play',json={'media_guid':bad},headers={'Authorization':token}).status_code==422
+    assert client.post('/danmu/external-play',json={'media_guid':raw_guid,'play_link':prefix+'preset.m3u8'},headers={'Authorization':token}).status_code==422
+    assert client.post('/danmu/external-play',json={'media_guid':raw_guid},headers={'Authorization':'invalid'}).status_code==401
+    raw=client.post('/danmu/external-play',json={'media_guid':raw_guid},headers={'Authorization':token})
+    assert raw.status_code==200,raw.data
+    raw_url=raw.json['data']['url'];assert raw_url.endswith('/media') and token not in raw_url
+    response=client.get(raw_url,headers={'Range':'bytes=0-6'});assert response.status_code==206 and response.data==b'fixture'
+    response=client.head(raw_url);assert response.status_code==200 and response.headers['Content-Length']=='19'
+    assert client.get(raw_url+'/other').status_code==403
+    assert client.get(raw_url+'?path=other').status_code==403
     try:module.rewrite_playlist('#EXTM3U\nhttps://attacker.test/file.ts\n',prefix+'preset.m3u8',prefix,ticket);raise AssertionError('foreign host accepted')
     except ValueError:pass
     value=json.loads(state.read_text());value['expires']=0;state.write_text(json.dumps(value))

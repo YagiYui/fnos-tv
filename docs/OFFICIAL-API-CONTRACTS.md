@@ -6,6 +6,8 @@
 
 ## 音轨与播放会话
 
+2026-10-24 外部播放补验：当前官方代码的原文件 URL 构造为 `/v/api/v1/media/range/<media_guid>`，可选 playlink 和 direct_link_quality_index；本次只接入无这些可选参数的本地原文件读取。真实鉴权下 GET Range 返回 206 和文件内容，HEAD 返回 501，故临时代理通过单字节 GET 实现 HEAD。账户凭据仅留在 NAS；临时地址绑定单个媒体 GUID。现有 HLS 会话的空闲生命周期与外部票据四小时上限不同，不将两者等同。
+
 - `POST /v/api/v1/play/play`：沿用本项目既有会话创建流程，音轨使用 `audio_guid`、`audio_encoder`、`channels`，进度使用 `startTimestamp`。
 - 官方前端音轨列表包含 `guid`、`index`、`language`、`title`、`codec_name`、`channel_layout`／`channels`、`is_default`。官方实现按保存的轨道、默认轨道或首轨选择，并允许空音轨标识。
 - 官方还使用 `POST /v/api/v1/media/p` 的 `req=media.resetAudio`，字段包括 `audioEncoder`、`channels`、`audioIndex`、`playLink` 和 `startTimestamp`。此路径已找到公开调用，但本轮音轨选择沿用已有新建播放链接流程，减少与字幕／引擎状态的耦合。
