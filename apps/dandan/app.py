@@ -7,6 +7,7 @@ from flask_caching import Cache
 from Config import cache
 from apps.dandan.dandanType import AnimeRetDto
 from apps.danmu.app import download_barrage
+from apps.danmu.sources import registry, SEARCHES
 from core.danmu.base import GetDanmuBase
 from core.danmu.danmuType import EpisodeDataDto, RetDanMuType
 from core.videoSearch.Base import VideoSearchBase
@@ -38,10 +39,17 @@ def search_anime():
             ]
         }
     video_list: List[VideoDataDto] = []
-    for c in VideoSearchBase.__subclasses__():
+    search_names = {key: name for key, _, name in SEARCHES}
+    for source in registry.enabled('searches'):
+        c = next((candidate for candidate in VideoSearchBase.__subclasses__() if candidate.__name__ == search_names.get(source)), None)
+        if c is None:
+            continue
         try:
             d = c().get(keyword)
             if d:
+                for video in d:
+                    video.url = registry.ordered_urls(video.url)
+                d = [video for video in d if video.url]
                 video_list += d
         except Exception as e:
             pass
@@ -66,6 +74,8 @@ def search_anime():
 def get_episode_url(platform_url_list):
     data_list = []
     for platform_url in platform_url_list:
+        if not registry.allowed(platform_url):
+            continue
         for c in GetDanmuBase.__subclasses__():
             if c.domain in platform_url:
                 d = c().get_episode_url(platform_url)

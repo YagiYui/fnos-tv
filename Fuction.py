@@ -17,9 +17,11 @@ from urllib.parse import urlparse
 import requests as req
 from curl_cffi import requests
 from retrying import retry
+from apps.danmu.sources import guard_source_request, SourceDisabled
 
 
-@retry(stop_max_attempt_number=5, wait_random_min=1000, wait_random_max=2000)
+@retry(stop_max_attempt_number=5, wait_random_min=1000, wait_random_max=2000,
+       retry_on_exception=lambda error: not isinstance(error, SourceDisabled))
 def request_data(method, url, status_code=None, **kwargs):
     """
     发送请求
@@ -29,6 +31,7 @@ def request_data(method, url, status_code=None, **kwargs):
     :param kwargs:
     :return:
     """
+    guard_source_request(url)
     if 'timeout' not in kwargs.keys():
         kwargs['timeout'] = 15
     if 'impersonate' in kwargs.keys():

@@ -19,7 +19,7 @@ class DB:
 
 class SearchBase: pass
 class DanmuBase: pass
-ns = {'re': re, 'unicodedata': unicodedata, 'VideoSearchBase': SearchBase,
+ns = {'registry': types.SimpleNamespace(allowed=lambda url:True,ordered_urls=lambda urls:list(dict.fromkeys(urls)),enabled=lambda kind:['360']), 'SEARCHES':[('360','360','Search')], 're': re, 'unicodedata': unicodedata, 'VideoSearchBase': SearchBase,
       'GetDanmuBase': DanmuBase, 'CRUDBase': DB, 'videoConfigUrl': object,
       'logger': types.SimpleNamespace(warning=lambda *args: None),
       'tldextract': types.SimpleNamespace(extract=lambda u: types.SimpleNamespace(domain=urllib.parse.urlparse(u).netloc))}
