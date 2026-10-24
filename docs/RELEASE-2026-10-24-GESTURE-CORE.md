@@ -20,4 +20,10 @@
 
 ## 发布与回退
 
-发布前只读核对当前容器健康、镜像和 web／Nginx／原文件补丁挂载；本批不修改后端、配置、数据库或容器生命周期。静态包配对提交、备份目录、资源校验和独立回退演练在发布后补充。新菜单不随本批发布，真机默认手势回归仍见晚间清单 M01／M02。
+前端业务提交 `f5c6b9f444c78efca9bcab7c12a9cfeda305377c`，配对清单后端提交 `df17fb3756e86db50315a6922caad21958536751`，已静态发布；后端业务仍为原文件补丁 `9657534`，镜像 `fnos-tv-local:indexes-c96657f-6945ff1` 未变。备份 `/vol7/1000/docker/.backups/fnos-tv-gesture-core-20261024-092023` 保存发布前网页、源码和配置快照，本批更新六个配套源码文件，先资源后首页，旧散列资源保留。
+
+发布前只读核对当前容器健康、镜像和 web／Nginx／原文件补丁挂载；71 个 NAS HTTP 文件和 8 个公网关键文件散列一致，Nginx 校验通过、健康正常、所有容器身份／启动时间不变。后端补丁、配置、数据库和进程无本批变更。无签名搜索代理和官方直连一致，仅作为路由检查，不当成真实登录验收。
+
+独立目录已演练“新静态版→上批 d48e93d→新版本”及六个源码文件恢复／移除／再恢复，散列通过；正式入口未参与回退切换，备份内保留 previous-web-manifest.json、rollback-rehearsal.json 与验证记录。回退先另备份当时现状，按 [静态工具流程](../deploy/README.md) 将本备份 web-before 发布到现有 web，使用 previous-web-manifest.json 校验，再按本批 release-manifest.json 的 source_files 逐项恢复 frontend-before；旧版没有的 `src/views/Play/gesture-settings.js` 与 `mobile-gestures.test.mjs` 仅从 NAS 挂载源码目录移除这两项，其他文件恢复，禁止整仓覆盖。不恢复数据库、删除账户偏好或重启容器。
+
+新菜单不随本批发布，真机默认手势回归仍见晚间清单 M01／M02。两仓只本地提交，未推送。
