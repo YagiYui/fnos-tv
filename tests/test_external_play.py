@@ -15,6 +15,7 @@ module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 prefix = '/v/media/' + 'a' * 32 + '/'
 token = 'test-private-cookie'
 raw_guid = 'c' * 32
+item_guid = 'd' * 32
 raw_path = '/v/api/v1/media/range/' + raw_guid
 class Server(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
@@ -24,7 +25,12 @@ class Server(BaseHTTPRequestHandler):
         else: self.do_GET()
     def do_GET(self):
         if self.headers.get('Authorization') != token or self.headers.get('Cookie') != 'authorization=' + token:
-            body=b'{"code":-2,"msg":"Auth Failed"}'; kind='application/json'; status=200
+            # Signed API authorization uses the Authorization header without a browser cookie.
+            if self.path.startswith('/v/api/v1/stream/list/') and self.headers.get('Authorization') == token:
+                assert self.headers.get('authx')
+                body=json.dumps({'code':0,'data':{'files':[{'guid':raw_guid}] if self.path.startswith('/v/api/v1/stream/list/'+item_guid+'?') else []}}).encode();kind='application/json';status=200
+            else:
+                body=b'{"code":-2,"msg":"Auth Failed"}'; kind='application/json'; status=200
         elif self.path == raw_path:
             body=b'fixture-media-bytes';kind='application/octet-stream';status=200
             if self.headers.get('Range'):
@@ -68,8 +74,9 @@ with tempfile.TemporaryDirectory() as directory:
     for bad in ['../secret','https://other','z'*32]:
         assert client.post('/danmu/external-play',json={'media_guid':bad},headers={'Authorization':token}).status_code==422
     assert client.post('/danmu/external-play',json={'media_guid':raw_guid,'play_link':prefix+'preset.m3u8'},headers={'Authorization':token}).status_code==422
-    assert client.post('/danmu/external-play',json={'media_guid':raw_guid},headers={'Authorization':'invalid'}).status_code==401
-    raw=client.post('/danmu/external-play',json={'media_guid':raw_guid},headers={'Authorization':token})
+    assert client.post('/danmu/external-play',json={'item_guid':item_guid,'media_guid':raw_guid},headers={'Authorization':'invalid'}).status_code==401
+    assert client.post('/danmu/external-play',json={'item_guid':'e'*32,'media_guid':raw_guid},headers={'Authorization':token}).status_code==401
+    raw=client.post('/danmu/external-play',json={'item_guid':item_guid,'media_guid':raw_guid},headers={'Authorization':token})
     assert raw.status_code==200,raw.data
     raw_url=raw.json['data']['url'];assert raw_url.endswith('/media') and token not in raw_url
     response=client.get(raw_url,headers={'Range':'bytes=0-6'});assert response.status_code==206 and response.data==b'fixture'

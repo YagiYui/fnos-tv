@@ -35,6 +35,27 @@ def raw_media_path(guid):
     return '/v/api/v1/media/range/' + guid
 
 
+def verify_file_access(token, item_guid, media_guid):
+    # The range endpoint can return an error body with a binary content type.
+    # Authorize the owning item using the signed API before issuing any capability.
+    raw_media_path(item_guid)
+    from apps.danmu.ass_support import signed_headers
+    path = '/api/v1/stream/list/' + item_guid
+    params = {'before_play': '1'}
+    with requests.Session() as session:
+        session.trust_env = False
+        with session.get(fnos_url.rstrip('/') + '/v' + path, params=params,
+                         headers=signed_headers(token, 'GET', path, params),
+                         timeout=(8, 45), allow_redirects=False) as response:
+            result = response.json()
+            if response.status_code != 200 or not isinstance(result, dict) or result.get('code') != 0:
+                raise PermissionError('登录已失效或没有访问该影片的权限')
+            data = result.get('data')
+            files = data.get('files') if isinstance(data, dict) else None
+            if not isinstance(files, list) or not any(item.get('guid') == media_guid for item in files if isinstance(item, dict)):
+                raise PermissionError('媒体文件不属于当前影片或没有访问权限')
+
+
 def upstream(path, token, method='GET', headers=None):
     # Never accept a destination host from the caller, or forward redirects with credentials.
     session = requests.Session()
@@ -99,10 +120,12 @@ def register_external_routes(blueprint):
                 if data.get('play_link'):
                     raise ValueError('仅支持一种播放来源')
                 path = raw_media_path(data['media_guid'])
+                verify_file_access(token, data.get('item_guid'), data['media_guid'])
                 with upstream(path, token, headers={'Range': 'bytes=0-0'}) as response:
                     if 'json' in response.headers.get('Content-Type', ''):
                         raise PermissionError('媒体登录已失效或没有访问权限')
-                    if response.status_code not in (200, 206) or 'text/html' in response.headers.get('Content-Type', ''):
+                    content_range = re.fullmatch(r'bytes 0-0/(\d+)', response.headers.get('Content-Range', ''))
+                    if response.status_code != 206 or not content_range or int(content_range[1]) < 1 or len(response.raw.read(2)) != 1:
                         raise ValueError('原文件不可用')
                 state = {'mode': 'file', 'path': path}
                 suffix = 'media'
