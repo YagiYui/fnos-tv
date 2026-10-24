@@ -221,13 +221,21 @@ class UserState:
 
     def put(self, owner, kind, scope, value):
         with self.connect() as connection:
+            connection.execute('BEGIN IMMEDIATE')
             if value is None:
                 connection.execute('DELETE FROM user_state WHERE owner=? AND kind=? AND scope=?', (owner, kind, scope))
                 return
             if connection.execute('SELECT count(*) FROM user_state WHERE owner=?', (owner,)).fetchone()[0] >= 5000 and connection.execute('SELECT 1 FROM user_state WHERE owner=? AND kind=? AND scope=?', (owner, kind, scope)).fetchone() is None:
                 raise ValueError('个人配置超过上限，请先清理不再使用的条目')
+            payload = json.dumps(value, ensure_ascii=False)
+            size = len(payload.encode('utf-8'))
+            if size > 128 * 1024:
+                raise ValueError('单项个人配置超过 128 KB，请减少映射条目')
+            used = connection.execute('SELECT COALESCE(sum(length(CAST(value AS BLOB))),0) FROM user_state WHERE owner=? AND NOT (kind=? AND scope=?)', (owner, kind, scope)).fetchone()[0]
+            if used + size > 16 * 1024 * 1024:
+                raise ValueError('账号个人配置超过 16 MB，请先清理不再使用的条目')
             connection.execute('INSERT INTO user_state VALUES (?,?,?,?,?) ON CONFLICT(owner,kind,scope) DO UPDATE SET value=excluded.value,updated=excluded.updated',
-                (owner, kind, scope, json.dumps(value, ensure_ascii=False), int(time.time())))
+                (owner, kind, scope, payload, int(time.time())))
 
 
 user_state = UserState()
@@ -477,6 +485,9 @@ def register_source_routes(blueprint):
     @blueprint.after_request
     def source_headers(response):
         from flask import g
+        if request.path.startswith('/danmu/sources'):
+            response.headers['Cache-Control'] = 'no-store'
+            response.headers['Vary'] = 'Authorization'
         if request.path in ('/danmu/get', '/danmu/getEmoji'):
             response.headers['Cache-Control'] = 'no-store'
             if getattr(g, 'danmaku_source', None):

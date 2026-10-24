@@ -27,6 +27,8 @@ from apps.danmu.sources import registry, register_source_routes, custom_search, 
 danmu = Blueprint('alist', __name__, url_prefix='/danmu')
 register_ass_routes(danmu)
 register_source_routes(danmu)
+from apps.danmu.personal import register_personal_routes
+register_personal_routes(danmu)
 from apps.danmu.external_play import register_external_routes
 register_external_routes(danmu)
 # 遍历 danmu_base 中所有子模块
