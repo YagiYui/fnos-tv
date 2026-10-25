@@ -1,0 +1,15 @@
+.git
+.venv
+.idea
+.env
+.env.*
+data
+node_modules
+__pycache__
+**/__pycache__
+*.log
+*.zip
+*.tgz
+*.tar
+*.tar.gz
+release-artifacts
