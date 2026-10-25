@@ -16,6 +16,7 @@ docker run --rm --network none --entrypoint /bin/bash \
     python tests/test_migrations.py
     python tests/test_release.py
     python tests/test_external_play.py apps/danmu/external_play.py
+    python tests/test_nginx_timing.py
     mkdir -p /tmp/hardening
     cp apps/danmu/ass_support.py cache_maintenance.py /tmp/hardening/
     python tests/test_hardening.py /tmp/hardening

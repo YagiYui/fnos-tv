@@ -10,9 +10,11 @@ http {
     map $uri $safe_log_uri {
         ~^/danmu/external-play/ /danmu/external-play/[ticket]/[resource];
         ~^/danmu/subtitle-(font|pgs-file)/ /danmu/subtitle-resource;
+        ~^/(?:fnos/)?v/media/(?:[^/]+/)*(?<safe_media_file>(?:preset|main|subtitle)\.m3u8|[0-9]+\.(?:ts|vtt))$ /v/media/[session]/$safe_media_file;
+        ~^/(?:fnos/)?v/media/ /v/media/[session]/[resource];
         default $uri;
     }
-    log_format safe '$remote_addr [$time_local] "$request_method $safe_log_uri $server_protocol" $status $body_bytes_sent "$http_user_agent"';
+    log_format safe '$remote_addr [$time_local] "$request_method $safe_log_uri $server_protocol" $status $body_bytes_sent "$http_user_agent" rt=$request_time uct=$upstream_connect_time uht=$upstream_header_time urt=$upstream_response_time';
     access_log /dev/stdout safe;
 
     include       /etc/nginx/mime.types;
