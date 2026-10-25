@@ -1,19 +1,14 @@
 #!/bin/bash
-
-# 确保日志目录存在
+set -euo pipefail
+umask 077
 mkdir -p /app/data/log
-
-# 确保数据库目录有正确的权限
-chown -R www-data:www-data /app/data
-chmod -R 755 /app/data
-
-# 替换 Nginx 配置中的变量
+# /run is a container tmpfs, outside inherited NAS ACLs and persistent backups.
+mkdir -p /run/fnos-tv-private
+chmod 700 /run/fnos-tv-private
+test "$(stat -c %a /run/fnos-tv-private)" = 700
 envsubst '${FNOS_URL}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
-
-if [ "$RUN_AND_UPDATE_WEB" = "true" ]; then
-    echo "Starting a.py script..."
-    python /app/update_dist.py
+# A release must never download unpaired upstream code over its mounted frontend.
+if [ "${RUN_AND_UPDATE_WEB:-false}" = "true" ]; then
+    echo 'Runtime frontend updates are disabled for the customized release.' >&2
 fi
-
-# 启动 supervisord（Nginx + Gunicorn）
 exec "$@"

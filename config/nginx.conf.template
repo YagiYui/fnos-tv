@@ -1,5 +1,5 @@
 worker_processes  auto;
-error_log  /var/log/nginx/error.log warn;
+error_log /dev/stderr warn;
 pid        /var/run/nginx.pid;
 
 events {
@@ -7,23 +7,87 @@ events {
 }
 
 http {
+    map $uri $safe_log_uri {
+        ~^/danmu/external-play/ /danmu/external-play/[ticket]/[resource];
+        ~^/danmu/subtitle-(font|pgs-file)/ /danmu/subtitle-resource;
+        default $uri;
+    }
+    log_format safe '$remote_addr [$time_local] "$request_method $safe_log_uri $server_protocol" $status $body_bytes_sent "$http_user_agent"';
+    access_log /dev/stdout safe;
+
     include       /etc/nginx/mime.types;
     default_type  application/octet-stream;
 
     sendfile        on;
     keepalive_timeout  65;
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
 
     server {
         listen       80;
         server_name  _;
+        absolute_redirect off;
+
+        # 爆米花选择飞牛影视时使用官方 8005 上的 Emby 兼容接口。
+        location /emby/ {
+            proxy_pass http://192.168.123.6:8005;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+        }
+
+        # 旧官方网页入口导向 fnos-tv，避免手机书签/地址补全打开原版页面。
+        location = /v {
+            return 302 /;
+        }
+        location = /v/ {
+            return 302 /;
+        }
+        location = /v/login {
+            return 302 /login;
+        }
+        # 官方 API、媒体等子路径保留原始路径及签名。
+        location /v/ {
+            proxy_pass ${FNOS_URL};
+            proxy_http_version 1.1;
+            proxy_ssl_server_name on;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $connection_upgrade;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_buffering off;
+            proxy_read_timeout 600s;
+        }
 
         # 静态文件直接由 nginx 提供
         location / {
             root /app/dist/;
             try_files $uri $uri/ /index.html;
         }
+        location ~ ^/assets/[^/]+\.wasm$ {
+            root /app/dist/;
+            default_type application/wasm;
+            try_files $uri =404;
+        }
+        location = /vendor/libass/subtitles-octopus-worker.wasm {
+            root /app/dist/;
+            default_type application/wasm;
+        }
         
         location /fnos/v/api/v1/play/record {
+            # DELETE bypasses the POST-only Flask playback progress recorder.
+            # Re-select /v/ so the original method, body and auth reach FNOS.
+            if ($request_method = DELETE) {
+                rewrite ^/fnos(/.*)$ $1 last;
+            }
             proxy_pass         http://127.0.0.1:8000;
             proxy_set_header   Host $host;
             proxy_set_header   X-Real-IP $remote_addr;
@@ -42,8 +106,19 @@ http {
         }
         
         # 其他请求反向代理到 Gunicorn
+        location = /danmu/external-play {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_set_header Host $http_host;
+        }
+        location ^~ /danmu/external-play/ {
+            proxy_pass http://127.0.0.1:8001;
+            proxy_buffering off;
+            proxy_read_timeout 150s;
+            proxy_set_header Host $http_host;
+        }
         location /danmu {
             proxy_pass         http://127.0.0.1:8000;
+            proxy_read_timeout 150s;
             proxy_set_header   Host $host;
             proxy_set_header   X-Real-IP $remote_addr;
             proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
