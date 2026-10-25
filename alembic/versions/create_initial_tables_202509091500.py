@@ -19,35 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """创建数据库表."""
-    # 创建 record 表
-    op.create_table('record',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('guid', sa.String(), nullable=True),
-        sa.Column('episode_guid', sa.String(), nullable=True),
-        sa.Column('time', sa.Integer(), nullable=True),
-        sa.Column('create_time', sa.Integer(), nullable=True),
-        sa.Column('playback_speed', sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
-    
-    # 创建 video_config_list 表
-    op.create_table('video_config_list',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('guid', sa.String(), nullable=True),
-        sa.Column('startTime', sa.Integer(), nullable=True),
-        sa.Column('endTime', sa.Integer(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
-    
-    # 创建 video_config_url 表 (包含新增的 parent_guid 字段)
-    op.create_table('video_config_url',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('guid', sa.String(), nullable=True),
-        sa.Column('parent_guid', sa.String(), nullable=True),
-        sa.Column('url', sa.String(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
+    """Preserve installations that already have some or all baseline tables."""
+    from core.db.migrations import ensure_schema
+    ensure_schema(op)
 
 
 def downgrade() -> None:

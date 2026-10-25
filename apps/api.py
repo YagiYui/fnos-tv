@@ -1,5 +1,5 @@
 import requests
-from flask import Blueprint, request
+from flask import Blueprint, request, current_app
 
 import Config
 from Config import fnos_username, fnos_password
@@ -9,9 +9,10 @@ from core.Fnos import FnOs
 from core.db.base import CRUDBase
 from core.db.model.recordDb import RecordDb
 from core.db.model.videoConfigDb import videoConfigList, videoConfigUrl
+from core.validation import media_identifier, video_config
 
 play = Blueprint('play', __name__, url_prefix='/play')
-if fnos_username is not None or fnos_password is not None:
+if fnos_username is not None and fnos_password is not None:
     FnOs.fn_os_ws.start()
     FnOs.login(fnos_username, fnos_password)
 
@@ -20,21 +21,28 @@ api_app = Blueprint('api', __name__, url_prefix='/api')
 
 @api_app.before_request
 def before_request():
-    if 'getFnUrl' not in request.path:
+    if request.endpoint != 'api.get_fn_url':
+        if not request.headers.get('Authorization'):
+            return {'code': -2, 'msg': '未登录'}, 401
         url = Config.fnos_url + '/v/api/v1/user/info'
         sign = generate_signature({
             'method': "get",
             'url': '/v/api/v1/user/info'
         }, "16CCEB3D-AB42-077D-36A1-F355324E4237")
-        res = requests.get(url, headers={
-            'authx': sign,
-            'authorization': request.headers.get('authorization')
-        })
-        if res.json().get('code') != 0:
-            return {
-                "code": -1,
-                "msg": '未登录'
-            }
+        try:
+            with requests.get(url, timeout=(5, 15), allow_redirects=False, headers={
+                'authx': sign,
+                'authorization': request.headers.get('authorization')
+            }) as response:
+                if response.status_code >= 500:
+                    return {'code': -1, 'msg': '账户服务暂时不可用'}, 502
+                result = response.json()
+                if response.status_code != 200 or not isinstance(result, dict) or result.get('code') != 0:
+                    return {'code': -2, 'msg': '未登录或登录已失效'}, 401
+        except requests.Timeout:
+            return {'code': -1, 'msg': '账户服务响应超时'}, 504
+        except (requests.RequestException, ValueError):
+            return {'code': -1, 'msg': '账户服务暂时不可用'}, 502
 
 
 @api_app.get('/skipList')
@@ -43,7 +51,10 @@ def skip_list():
     guid = data.get("guid")
     record_db = CRUDBase(RecordDb)
     # record_data_list = record_db.session.query(record_db.model).filter(RecordDb.guid==guid).group_by(RecordDb.episode_guid).all()
-    record_data_dict = record_db.group_by('episode_guid', guid=guid)
+    try:
+        record_data_dict = record_db.group_by('episode_guid', guid=guid)
+    finally:
+        record_db.close()
     skipped_segments = {}
     for key, value in record_data_dict.items():
         skipped_segments[key] = find_skipped_segments(value)
@@ -86,42 +97,41 @@ def get_video_config():
             _guid = guid
         else:
             _guid = episode_guid
-        db_data = db.filter(guid=_guid)
-        for item in db_data:
-            ret_data[data[0]].append(item.get_data())
+        try:
+            for item in db.filter(guid=_guid):
+                ret_data[data[0]].append(item.get_data())
+        finally:
+            db.close()
     return ret_data
 
 
 @api_app.post('/videoConfig')
 def update_video_config():
-    episode_guid = request.args.get('episode_guid')
-    guid = request.args.get('guid')
-    if guid is None and episode_guid is None:
-        return {
-            'code': 404,
-            'msg': '未获取到guid'
-        }
-    data = request.json
-    db_type = {
-        'list': videoConfigList,
-        'url': videoConfigUrl,
-    }
-    for key, value in data.items():
-        parent_guid = None
-        db = CRUDBase(db_type[key])
-        if key == "list":
-            _guid = guid
-        else:
-            _guid = episode_guid
-            parent_guid = guid
-        for item in value:
-            if parent_guid is not  None:
-                item['parent_guid'] = parent_guid
-            db.add(guid=_guid, **item)
-    return {
-        'code': 0,
-        "msg": 'ok'
-    }
+    try:
+        guid = media_identifier(request.args.get('guid'))
+        episode_guid = media_identifier(request.args.get('episode_guid'))
+        data = video_config(request.get_json(silent=True))
+    except ValueError as error:
+        return {'code': -1, 'msg': str(error)}, 400
+    db = CRUDBase(videoConfigList)
+    try:
+        for key, rows in data.items():
+            model = videoConfigList if key == 'list' else videoConfigUrl
+            scope = guid if key == 'list' else episode_guid
+            db.session.query(model).filter_by(guid=scope).delete(synchronize_session=False)
+            for row in rows:
+                values = {**row, 'guid': scope}
+                if key == 'url':
+                    values['parent_guid'] = guid
+                db.session.add(model(**values))
+        db.session.commit()
+        return {'code': 0, 'msg': 'ok'}
+    except Exception:
+        db.session.rollback()
+        current_app.logger.warning('Video configuration transaction failed')
+        return {'code': -1, 'msg': '保存失败，请稍后重试'}, 500
+    finally:
+        db.close()
 
 
 @api_app.get('/play')

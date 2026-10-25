@@ -1,9 +1,10 @@
 import requests
-from flask import Blueprint, request
+from flask import Blueprint, current_app, request
 
 from Config import fnos_url
 from core.db.base import CRUDBase
 from core.db.model.recordDb import RecordDb
+from core.validation import playback_record
 
 fnos_app = Blueprint('fnos', __name__, url_prefix='/fnos')
 
@@ -14,20 +15,36 @@ def record():
     记录播放记录，推算跳过片段
     :return: 
     """
-    data = request.json
-    # 转发到飞牛原始接口
-    res = requests.post(f"{fnos_url}/v/api/v1/play/record", json=data, headers={
-        "Cookie": request.headers.get('Cookie'),
-        "authorization": request.headers.get('authorization'),
-        "authx": request.headers.get('authx'),
-    })
-    record_db = CRUDBase(RecordDb)
-    record_db.add(
-        guid=data.get("guid"),
-        episode_guid=data.get("item_guid"),
-        time=data.get("ts"),
-        create_time=data.get("create_time"),
-        playback_speed=data.get("playback_speed"),
-    )
-    return res.json()
-    # return 'ok'
+    data = request.get_json(silent=True)
+    try:
+        local_record = playback_record(data)
+    except ValueError as error:
+        return {'code': -1, 'msg': str(error)}, 400
+    try:
+        with requests.post(f"{fnos_url}/v/api/v1/play/record", json=data,
+                           timeout=(5, 20), allow_redirects=False, headers={
+                               key: request.headers[key]
+                               for key in ('Cookie', 'Authorization', 'authx') if key in request.headers
+                           }) as response:
+            status = response.status_code
+            result = response.json()
+            if not isinstance(result, dict):
+                raise ValueError('Unexpected response')
+    except requests.Timeout:
+        return {'code': -1, 'msg': '记录进度超时，请稍后重试'}, 504
+    except (requests.RequestException, ValueError):
+        return {'code': -1, 'msg': '记录进度服务暂时不可用'}, 502
+    # Auxiliary recording must neither accept a rejected request nor hide upstream success.
+    if 200 <= status < 300 and result.get('code') == 0:
+        record_db = None
+        try:
+            record_db = CRUDBase(RecordDb)
+            record_db.add(**local_record)
+        except Exception:
+            if record_db is not None:
+                record_db.session.rollback()
+            current_app.logger.warning('Auxiliary playback recording failed')
+        finally:
+            if record_db is not None:
+                record_db.close()
+    return result, status
