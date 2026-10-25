@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 from core.danmu.danmuType import EpisodeDataDto
 from core.danmu.danmuType import DanMuType, RetDanMuType
+from apps.danmu.sources import guard_source_request
 
 
 class GetDanmuBase(object):
@@ -30,6 +31,8 @@ class GetDanmuBase(object):
         :return: 
         """
         try:
+            guard_source_request(url)
+            kwargs.setdefault('timeout', 15)
             res = session.request(method, url, **kwargs)
             return res
         except Exception as e:

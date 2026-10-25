@@ -14,7 +14,7 @@ class Platform(ProviderBase):
 class SearchBy360(SearchBase):
  def get(self,query):return [types.SimpleNamespace(title='Fixture title',season_number=1,url=['https://video.example/ep1','https://video.example/ep2','https://badvideo.example/ep'])]
 request=types.SimpleNamespace(args={},headers={},get_json=lambda **k:{})
-ns={'urlparse':urlparse,'GetDanmuBase':ProviderBase,'VideoSearchBase':SearchBase,'request':request,'re':re,
+ns={'registry':types.SimpleNamespace(provider_id=lambda url:'fixture',allowed=lambda url:True,enabled=lambda kind:['360','douban']),'urlparse':urlparse,'GetDanmuBase':ProviderBase,'VideoSearchBase':SearchBase,'request':request,'re':re,
  'logger':types.SimpleNamespace(warning=lambda *a:None),'hashlib':hashlib,'time':time,'fnos_url':'http://official.fixture',
  'requests':types.SimpleNamespace(get=lambda *a,**k:types.SimpleNamespace(status_code=200,json=lambda:{'code':0}))}
 exec(compile(ast.Module(body=functions,type_ignores=[]),str(source),'exec'),ns)

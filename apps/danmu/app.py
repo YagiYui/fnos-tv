@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 
 import tldextract
-from flask import Blueprint
+from flask import Blueprint, g, Response
 from flask import request
 import requests
 from loguru import logger
@@ -22,9 +22,11 @@ from core.db.model.videoConfigDb import videoConfigUrl
 from core.videoSearch.Base import VideoSearchBase
 from Config import fnos_url
 from apps.danmu.ass_support import register_ass_routes
+from apps.danmu.sources import registry, register_source_routes, custom_search, custom_episodes, custom_comments, SEARCHES, personalized_urls, record_source_result
 
 danmu = Blueprint('alist', __name__, url_prefix='/danmu')
 register_ass_routes(danmu)
+register_source_routes(danmu)
 from apps.danmu.external_play import register_external_routes
 register_external_routes(danmu)
 # 遍历 danmu_base 中所有子模块
@@ -37,7 +39,11 @@ for finder, mod_name, ispkg in pkgutil.walk_packages(videoSearch.__path__, video
 
 
 def download_barrage(_url):
-    # while True:
+    if not registry.allowed(_url):
+        raise ValueError('此弹幕来源已被管理员禁用')
+    if _url.startswith('danmaku://'):
+        from core.danmu.danmuType import DanMuType
+        return RetDanMuType([DanMuType(**row) for row in custom_comments(_url)])
     for c in GetDanmuBase.__subclasses__():
         if c.domain in _url:
             d = c().get(_url)
@@ -55,6 +61,8 @@ def manual_provider(url):
     for provider in GetDanmuBase.__subclasses__():
         domain = provider.domain.lower()
         if host == domain or host.endswith('.' + domain):
+            if not registry.allowed(url):
+                raise ValueError('此平台已被管理员禁用')
             return provider
     raise ValueError('支持 B站、爱奇艺、腾讯视频、优酷、芒果TV、搜狐播放链接')
 
@@ -63,10 +71,14 @@ def manual_search(keyword, source='360'):
     keyword = keyword.strip()
     if not keyword or len(keyword) > 100:
         raise ValueError('请输入 1–100 字的片名或平台播放链接')
+    if source.startswith('custom-'):
+        return custom_search(source, keyword)
     if keyword.startswith(('http://', 'https://')):
         provider = manual_provider(keyword)
-        return [{'title': '手动播放链接', 'platform': provider.name, 'url': keyword, 'season': None}]
+        return [{'title': '手动播放链接', 'platform': provider.name, 'url': keyword, 'season': None, 'source_id': registry.provider_id(keyword)}]
     provider_name = {'360': 'SearchBy360', 'douban': 'DoubanSearch'}.get(source)
+    if source not in registry.enabled('searches'):
+        raise ValueError('此搜索入口已被管理员禁用')
     provider = next((c for c in VideoSearchBase.__subclasses__() if c.__name__ == provider_name), None)
     if not provider:
         raise ValueError('不支持的搜索来源')
@@ -86,7 +98,7 @@ def manual_search(keyword, source='360'):
             seen.add(key)
             platforms.add(platform.domain)
             results.append({'title': video.title, 'season': video.season_number,
-                            'platform': platform.name, 'url': url})
+                            'platform': platform.name, 'url': url, 'source_id': registry.provider_id(url)})
     return results[:50]
 
 
@@ -105,6 +117,8 @@ def search_manual_danmu():
 def manual_danmu_episodes():
     try:
         url = request.args.get('url', '')
+        if url.startswith('danmaku://'):
+            return {'code': 0, 'episodes': custom_episodes(url)}
         provider = manual_provider(url)
         episodes = []
         for episode in provider().get_episode_url(url) or []:
@@ -144,7 +158,11 @@ def select_manual_danmu():
         url = data.get('url', '')
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}', guid) or len(parent_guid) > 100:
             raise ValueError('缺少有效的当前集标识')
-        manual_provider(url)
+        if url.startswith('danmaku://'):
+            from apps.danmu.sources import parse_reference
+            parse_reference(url, 'episode')
+        else:
+            manual_provider(url)
         db = CRUDBase(videoConfigUrl)
         try:
             db.session.query(videoConfigUrl).filter_by(guid=guid).delete()
@@ -173,21 +191,27 @@ def searchVideoData(name: str, tv_num: str, season: bool):
     url_list = []
     queries = list(dict.fromkeys([name, normalized_title(name)]))
     for query in queries:
-        for c in VideoSearchBase.__subclasses__():
+        names = {key: name for key, _, name in SEARCHES}
+        for source in registry.enabled('searches'):
+            c = next((item for item in VideoSearchBase.__subclasses__() if item.__name__ == names.get(source)), None)
+            if c is None:
+                continue
             try:
                 for v in c().get(query) or []:
                     if normalized_title(v.title) == normalized_title(name) and v.season_number == int(tv_num or 1):
-                        url_list += v.url
+                        url_list += [url for url in v.url if registry.allowed(url)]
             except Exception as e:
                 logger.warning(f'弹幕搜索源 {c.__name__} 失败: {type(e).__name__}')
         if url_list:
             break
-    return list({tldextract.extract(u).domain: u for u in url_list}.values())
+    return registry.ordered_urls(list({tldextract.extract(u).domain: u for u in url_list}.values()))
 
 
 def get_episode_url(platform_url_list):
     url_dict = {}
     for platform_url in platform_url_list:
+        if not registry.allowed(platform_url):
+            continue
         for c in GetDanmuBase.__subclasses__():
             if c.domain in platform_url:
                 try:
@@ -207,23 +231,27 @@ def get_episode_url(platform_url_list):
 def fetch_emoji(url):
     """获取单个URL的表情数据"""
     try:
+        if not registry.allowed(url) or url.startswith('danmaku://'):
+            return {'url': url, 'data': []}
         for c in GetDanmuBase.__subclasses__():
             if c.domain in url:
                 return {"url": url, "data": c().getImg(url)}
         return {"url": url, "data": []}
     except Exception as e:
-        logger.error(f"获取表情失败 {url}: {str(e)}")
+        logger.error(f"获取表情失败: {type(e).__name__}")
         return {"url": url, "data": []}
 
 
 def fetch_danmu(url, episode_key):
     """获取单个URL的弹幕数据"""
     try:
-        logger.info(f"获取弹幕: {url} (集数: {episode_key})")
+        logger.info('获取已启用来源弹幕')
         danmu_data = download_barrage(url)
+        record_source_result(registry.provider_id(url), 'ok' if danmu_data and danmu_data.list else 'empty')
         return {"key": episode_key, "data": danmu_data}
     except Exception as e:
-        logger.error(f"获取弹幕失败 {url}: {str(e)}")
+        record_source_result(registry.provider_id(url), 'failed')
+        logger.error(f"获取弹幕失败: {type(e).__name__}")
         return {"key": episode_key, "data": None}
 
 
@@ -240,9 +268,9 @@ def get_url_dict(douban_id, title=None, season_number=None, episode_number=None,
         if guid and episode_number:
             saved = [item.url for item in db.filter(guid=guid) if item.url]
             if saved:
-                return {str(episode_number): list(dict.fromkeys(saved))}
+                return {str(episode_number): registry.ordered_urls(saved)}
         if parent_guid:
-            platform_url_list = list(dict.fromkeys(item.url for item in db.filter(parent_guid=parent_guid) if item.url))
+            platform_url_list = registry.ordered_urls(item.url for item in db.filter(parent_guid=parent_guid) if item.url)
     finally:
         db.close()
 
@@ -289,40 +317,44 @@ def get_danmu():
 
     if url is not None and url != "":
         try:
-            manual_provider(url)
+            if url.startswith('danmaku://'):
+                from apps.danmu.sources import parse_reference
+                parse_reference(url, 'episode')
+            else:
+                manual_provider(url)
+            danmu_data: RetDanMuType = download_barrage(url)
         except ValueError as error:
             return {'code': -1, 'msg': str(error)}, 400
-        danmu_data: RetDanMuType = download_barrage(url)
+        except Exception:
+            return {'code': -1, 'msg': '所选来源获取失败，请手动切换来源或重试'}, 502
         if danmu_data is None:
             return {'code': -1, 'msg': '此链接未返回弹幕，请尝试其他来源'}, 502
         danmu_data.list.sort(key=lambda x: x.time)
+        g.danmaku_source = registry.provider_id(url)
+        record_source_result(g.danmaku_source, 'ok' if danmu_data.list else 'empty')
         if _type == 'json':
             return [item.__dict__() for item in danmu_data.list]
         else:
             return danmu_data.xml
 
     all_danmu_data = {}
-    url_dict = get_url_dict(douban_id, title, season_number, episode_number, season, guid, episode_title, parent_guid)
+    try:
+        url_dict, fallback = personalized_urls(lambda: get_url_dict(douban_id, title, season_number, episode_number, season, guid, episode_title, parent_guid), guid, parent_guid, episode_number, title)
+    except (ValueError, PermissionError):
+        return {'code': -1, 'msg': '个人来源已禁用、映射缺集或登录失效，请重新选择来源或恢复自动匹配'}, 400
+    except Exception:
+        return {'code': -1, 'msg': '弹幕来源或账户服务暂时不可用，视频播放不受影响'}, 502
 
-    # 准备任务列表
-    tasks = []
-    for k, v in url_dict.items():
-        for u in v:
-            tasks.append((u, k))
-
-    # 使用线程池并行获取所有弹幕
-    if tasks:
-        logger.info(f"开始并行获取 {len(tasks)} 个链接的弹幕")
-        with ThreadPoolExecutor(max_workers=min(20, len(tasks))) as executor:
-            results = list(executor.map(lambda args: fetch_danmu(*args), tasks))
-
-            # 处理结果
-            for result in results:
-                if result["data"] is not None:
-                    k = str(result["key"])
-                    if k not in all_danmu_data.keys():
-                        all_danmu_data[k] = []
-                    all_danmu_data[k] += result["data"].list
+    # One source at a time in configured order; fallback never opens every provider concurrently.
+    for key, urls in list(url_dict.items())[:10]:
+        for address in list(dict.fromkeys(address for address in urls if registry.allowed(address)))[:8]:
+            result = fetch_danmu(address, key)
+            if result['data'] is not None and result['data'].list:
+                all_danmu_data[str(key)] = result['data'].list
+                g.danmaku_source = registry.provider_id(address)
+                break
+            if not fallback:
+                break
     # 对数据进行排序
     for key, value in all_danmu_data.items():
         value.sort(key=lambda x: x.time)
@@ -356,17 +388,23 @@ def get_emoji():
 
     if url is not None and url != "":
         url_dict = {
-            "1": url
+            "1": [url]
         }
     else:
-        url_dict = get_url_dict(douban_id, title, season_number, episode_number, season, guid, episode_title,
-                                parent_guid=parent_guid)
+        try:
+            url_dict, _ = personalized_urls(lambda: get_url_dict(douban_id, title, season_number, episode_number, season, guid, episode_title,
+                                parent_guid=parent_guid), guid, parent_guid, episode_number, title)
+        except Exception:
+            return {}
     emoji_data = {}
     if len(url_dict.keys()) == 0:
         return emoji_data
 
     # 获取所有需要处理的URL
-    urls = url_dict.get(list(url_dict.keys())[0], [])
+    urls = registry.ordered_urls(url_dict.get(list(url_dict.keys())[0], []))[:1]
+    source_hint = request.args.get('source_id', '')
+    if source_hint:
+        urls = [url for url in url_dict.get(list(url_dict.keys())[0], []) if registry.allowed(url) and registry.provider_id(url) == source_hint][:1]
 
     # 使用线程池并行获取所有表情
     if urls:
@@ -401,7 +439,12 @@ def download_danmu():
     filename = 'danmu.xml'
     
     # 获取弹幕数据并下载
-    danmu_data: RetDanMuType = download_barrage(url)
+    try:
+        if not url.startswith('danmaku://'):
+            manual_provider(url)
+        danmu_data: RetDanMuType = download_barrage(url)
+    except Exception:
+        return {'code': -1, 'msg': '弹幕来源不可用或已禁用'}, 400
     if danmu_data:
         danmu_data.list.sort(key=lambda x: x.time)
         xml_content = danmu_data.xml
