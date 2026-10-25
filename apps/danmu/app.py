@@ -19,6 +19,8 @@ from apps.danmu.ass_support import register_ass_routes
 
 danmu = Blueprint('alist', __name__, url_prefix='/danmu')
 register_ass_routes(danmu)
+from apps.danmu.external_play import register_external_routes
+register_external_routes(danmu)
 # 遍历 danmu_base 中所有子模块
 for finder, mod_name, ispkg in pkgutil.walk_packages(danmu_base.__path__, danmu_base.__name__ + "."):
     importlib.import_module(mod_name)
