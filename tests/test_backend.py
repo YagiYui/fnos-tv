@@ -19,7 +19,7 @@ class DB:
 
 class SearchBase: pass
 class DanmuBase: pass
-ns = {'registry': types.SimpleNamespace(allowed=lambda url:True,ordered_urls=lambda urls:list(dict.fromkeys(urls)),enabled=lambda kind:['360']), 'SEARCHES':[('360','360','Search')], 're': re, 'unicodedata': unicodedata, 'VideoSearchBase': SearchBase,
+ns = {'g':types.SimpleNamespace(),'automatic_urls':lambda key,loader:loader(),'registry': types.SimpleNamespace(allowed=lambda url:True,ordered_urls=lambda urls:list(dict.fromkeys(urls)),enabled=lambda kind:['360']), 'SEARCHES':[('360','360','Search')], 're': re, 'unicodedata': unicodedata, 'VideoSearchBase': SearchBase,
       'GetDanmuBase': DanmuBase, 'CRUDBase': DB, 'videoConfigUrl': object,
       'logger': types.SimpleNamespace(warning=lambda *args: None),
       'tldextract': types.SimpleNamespace(extract=lambda u: types.SimpleNamespace(domain=urllib.parse.urlparse(u).netloc))}
@@ -41,3 +41,6 @@ class Provider(DanmuBase):
         return [types.SimpleNamespace(episodeNumber=n, url='https://video.example/episode1') for n in [1, '1']]
 assert ns['get_episode_url'](['https://video.example/season']) == {'1': ['https://video.example/episode1']}
 print('PASS: saved episode URLs survive automatic search, DB sessions close, title normalization, season isolation, string episode keys')
+
+assert ns['get_url_dict'](None, '【我推的孩子】', '1', '1', True, 'new-guid') == {'1':['https://video.example/episode1']}
+assert not hasattr(DB,'add'), 'Automatic matching must not require a shared database write'

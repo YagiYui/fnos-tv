@@ -26,6 +26,28 @@ class SourcesTest(unittest.TestCase):
         self.patch = patch.object(module, 'registry', self.registry); self.patch.start(); self.addCleanup(self.patch.stop)
         self.state_patch = patch.object(module, 'user_state', self.state); self.state_patch.start(); self.addCleanup(self.state_patch.stop)
 
+    def test_automatic_cache_account_revision_expiry_and_preferences_survive(self):
+        try:
+            from flask import Flask, g
+        except ImportError:
+            self.skipTest('Flask unavailable; verify in disposable image')
+        calls = []
+        def load(): calls.append(1); return {'1':['https://bilibili.com/fixture']}
+        self.state.put('alice','danmaku','user',{'source_id':'auto'})
+        with Flask(__name__).test_request_context('/'):
+            g.source_account={'owner':'alice'}
+            g.source_item={'guid':'episode'}
+            self.assertEqual(module.automatic_urls(['episode'],load),module.automatic_urls(['episode'],load))
+            self.assertEqual(len(calls),1)
+            g.source_account={'owner':'bob'}; module.automatic_urls(['episode'],load); self.assertEqual(len(calls),2)
+            g.source_account={'owner':'alice'}
+            config=self.registry.read();config['providers'].reverse();self.registry.save(config)
+            module.automatic_urls(['episode'],load);self.assertEqual(len(calls),3)
+            with patch.object(module.time,'time',return_value=module.time.time()+601):
+                module.automatic_urls(['episode'],load)
+            self.assertEqual(len(calls),4)
+            self.assertEqual(self.state.get('alice','danmaku','user'),{'source_id':'auto'})
+
     def test_persistence_priority_disable_secret_and_conflict(self):
         config = self.registry.read(); config['providers'].reverse(); config['providers'][0]['enabled'] = False
         config['searches'][0]['enabled'] = False
